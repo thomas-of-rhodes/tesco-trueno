@@ -664,7 +664,7 @@ const TOWN = (function(){
       }
       if (!nm) continue;
       out.push({ rid:rid++, kind:kind, sex:sex, first:nm[0], last:nm[1],
-                 name:nm[0] + ' ' + nm[1], being:null, car:null, visits:[] });
+                 name:nm[0] + ' ' + nm[1], being:null, car:null, visits:[], visit:null });
     }
   };
   add('granny',  NAMES.granny, 'f', 160);
@@ -672,26 +672,58 @@ const TOWN = (function(){
   add('shopper', NAMES.him,    'm', 120);
   /* The staff are residents with a job. Fixed, so they are the same two men on
      every load; Thomas can rename them. */
+  /* The shop's own staff - tills, shelves, the bakery. Never seen inside, and
+     for now never seen at all: they are who owns the long-stay cars. Step 4
+     gives them shifts, so they come and go at shift change. */
+  add('staff', NAMES.her, 'f', 45);
+  add('staff', NAMES.him, 'm', 45);
   out.push({ rid:rid++, kind:'manager',    sex:'m', first:'Derek', last:'Paterson',
-             name:'Derek Paterson', being:null, car:null, visits:[] });
+             name:'Derek Paterson', being:null, car:null, visits:[], visit:null });
   out.push({ rid:rid++, kind:'trolleyboy', sex:'m', first:'Kyle',  last:'Reid',
-             name:'Kyle Reid', being:null, car:null, visits:[] });
+             name:'Kyle Reid', being:null, car:null, visits:[], visit:null });
   return out;
 })();
 /* Hand a new being a resident of its kind who is not already on site. "On
    site" is checked against BEINGS itself rather than trusted from a flag,
    because the test rig empties and restores BEINGS wholesale and would leave
    claims behind that nothing ever releases. */
-function claimResident(b){
+function residentOnSite(r){
+  return !!(r.being && !r.being.gone && BEINGS.indexOf(r.being) >= 0);
+}
+/* Somebody of this kind who is at home: not on site, and not off-map in the
+   middle of a visit either (in the shop, or at work). */
+function freeResident(kind){
   const free = [];
   for (const r of TOWN){
-    if (r.kind !== b.kind) continue;
-    if (r.being && !r.being.gone && BEINGS.indexOf(r.being) >= 0) continue;
+    if (r.kind !== kind) continue;
+    if (residentOnSite(r)) continue;
+    if (r.visit && r.visit.out === null) continue;
     free.push(r);
   }
-  if (!free.length) return null;
-  const r = free[Math.floor(Math.random() * free.length)];
+  return free.length ? free[Math.floor(Math.random() * free.length)] : null;
+}
+/* `want` is a particular resident coming back into view - out of the shop
+   doors, say - rather than whoever is free. */
+function claimResident(b, want){
+  const r = want || freeResident(b.kind);
+  if (!r) return null;
   r.being = b;
+  return r;
+}
+/* A visit that has started with nobody on screen: the opening car park. */
+function openVisit(r, where, by, bay){
+  r.visit = { in:+simClockNow().toFixed(1), out:null, fate:null, by:by,
+              where:where, bay:bay || null };
+  r.visits.push(r.visit);
+  return r.visit;
+}
+/* The owner of a car who is NOT on the map - in the shop, at work, or (step 3)
+   in town. Keyed off the car's own record, which follows it everywhere. */
+function offMapOwner(bay){
+  const v = bay.car && bay.car.veh;
+  if (!v || v.ownerRid === null || v.ownerRid === undefined) return null;
+  const r = TOWN[v.ownerRid];
+  if (!r || residentOnSite(r) || !r.visit || r.visit.out !== null) return null;
   return r;
 }
 
@@ -699,7 +731,7 @@ let PID = 0, VID = 0;
 const VEH = [];                       // every vehicle that has ever existed
 function newVeh(model){
   const v = { vid:VID++, sprite:model ? model.sprite : '?',
-              ownerPid:null, bay:null, fate:null, born:simClockNow() };
+              ownerPid:null, ownerRid:null, bay:null, fate:null, born:simClockNow() };
   VEH.push(v);
   return v;
 }
@@ -741,12 +773,15 @@ function censusCarDone(c){
     return;
   }
   v.fate = 'vanished'; CENSUS.ev.carsVanished++;
+  if (v.ownerPid !== null && PEOPLE[v.ownerPid]) closeVisit(PEOPLE[v.ownerPid], 'vanished');
   censusNote('car vanished', vehName(v) + ' state ' + c.state +
              ' at ' + c.x.toFixed(0) + ',' + c.y.toFixed(0));
 }
 function closeVisit(rec, how){
   const vis = rec.visits[rec.visits.length - 1];
   if (vis && vis.out === null){ vis.out = +simClockNow().toFixed(1); vis.fate = how; }
+  if (rec.rid !== null && rec.rid !== undefined && TOWN[rec.rid] &&
+      TOWN[rec.rid].visit === vis) TOWN[rec.rid].visit = null;
   for (const b of BEINGS) if (b.pid === rec.pid && vis && !vis.by) vis.by = b.arrivedBy;
 }
 /* A being is being reaped. Record how they went. */
@@ -790,18 +825,28 @@ const LOST = ['muddled','hunting','seekHelp','waitHelp','following'];
 function census(){
   const out = { t:+simClockNow().toFixed(1),
     cars:{ parked:0, ownerShop:0, ownerCarPark:0, ownerAway:0, ownerTay:0,
+           ownerWork:0, ownerTown:0, ownerInCar:0,
            orphanLong:0, orphanShort:0,
            arrivingNoPerson:0, leavingWithDriver:0, leavingNoDriver:0,
            lifted:0, other:0 },
     people:{ shop:0, carPark:0, away:0, tay:0,
              byCar:0, byFoot:0, byBus:0, lost:0, carless:0 },
     staff:{ onSite:0, inShop:0, away:0, withCar:0 },
+    offMap:{ shop:0, work:0, town:0, car:0 },
     orphans:[], carless:[] };
   for (const bay of BAYS){
     if (!bay.car) continue;
     out.cars.parked++;
     const o = ownerOfBay(bay);
     if (!o){
+      const r = offMapOwner(bay);
+      if (r){
+        if (r.visit.where === 'work') out.cars.ownerWork++;
+        else if (r.visit.where === 'town') out.cars.ownerTown++;
+        else if (r.visit.where === 'car') out.cars.ownerInCar++;
+        else out.cars.ownerShop++;
+        continue;
+      }
       if (bay.longStay) out.cars.orphanLong++; else out.cars.orphanShort++;
       if (out.orphans.length < 60)
         out.orphans.push((bay.car.veh ? vehName(bay.car.veh) : '?') +
@@ -824,6 +869,10 @@ function census(){
       else out.cars.leavingNoDriver++;
     }
     else out.cars.other++;
+  }
+  for (const r of TOWN){
+    if (!r.visit || r.visit.out !== null || residentOnSite(r)) continue;
+    if (r.visit.where && out.offMap[r.visit.where] !== undefined) out.offMap[r.visit.where]++;
   }
   for (const b of BEINGS){
     if (b.gone) continue;
@@ -1100,6 +1149,9 @@ function spawnDeparture(){
       if (o.ownBay === b || (b.ownerCid && o.cid === b.ownerCid)) owned = true;
     }
     if (owned) continue;
+    /* Staff at work are not leaving because the car park would like a space. */
+    const offr = offMapOwner(b);
+    if (offr && offr.visit.where === 'work') continue;
     /* The far end goes first in the evening, the prime row clings on. */
     const sc = (1.6 - b.want) * (0.5 + Math.random());
     if (sc > bs){ bs = sc; best = b; }
@@ -1122,9 +1174,34 @@ function spawnDeparture(){
     b.shopT = 0;
     return true;
   }
-  /* Nobody in there owns it - a long-stay car, or one seeded at opening - so a
-     driver turns up for it the old way. They still get a life, so they behave
-     like everybody else from here on. */
+  /* Sat in it already - got in, could not get out, ended up back in the space.
+     They just start the engine again. */
+  const inCar = offMapOwner(best);
+  if (inCar && inCar.visit.where === 'car'){
+    beginDeparture(best);
+    TRAF.restarted = (TRAF.restarted || 0) + 1;
+    return true;
+  }
+  /* The owner is in the shop, off the map: they finish, and come out of the
+     doors like everybody else. This is what a departure IS now - somebody you
+     could have counted all along walking back to their own car. */
+  const offr = offMapOwner(best);
+  if (offr && offr.visit.where === 'shop' && KINDS[offr.kind]){
+    const dr = nearestPlace(PLACES.doors, best.x, best.y);
+    const who = addBeing(offr.kind, dr[0], dr[1] + 1.2, offr);
+    who.spawned = true;
+    who.ownBay = best;
+    who.arrivedBy = 'car';
+    who.carSprite = best.car && best.car.model ? best.car.model.sprite : null;
+    who.parkedAt = bayStand(best);
+    best.ownerCid = who.cid;
+    if (best.car && best.car.veh) best.car.veh.ownerPid = who.pid;
+    who.life = 'outDoors';
+    CENSUS.ev.fetched = (CENSUS.ev.fetched || 0) + 1;
+    return true;
+  }
+  /* Nobody owns it at all, which should no longer happen outside the test rig:
+     a driver turns up for it the old way, and the census counts it. */
   const owner = addBeing('shopper', best.x + best.toAisle * 1.2, best.y);
   /* The census counts every one of these: a person who appeared beside a car
      with no visit behind them. Step 2 removes the need for them. */
@@ -1147,7 +1224,8 @@ function beginDeparture(bay){
   /* Whoever is getting in is now IN the car, as far as the census goes - their
      visit stays open until the car is out of the gate. */
   const drv = ownerOfBay(bay);
-  if (drv){ drv.drove = true; if (veh) veh.ownerPid = drv.pid; }
+  if (drv){ drv.drove = true; if (veh) veh.ownerPid = drv.pid;
+    if (drv.res && drv.res.visit && drv.res.visit.out === null) drv.res.visit.where = 'car'; }
   emptyBay(bay);
   bay.leaving = false; bay.leaveBy = undefined; bay.claimed = false;
   bay.longStay = false;
@@ -1259,7 +1337,19 @@ function stepNpc(c, dt){
   if (c.state === 'in' || c.state === 'go'){
     if (!c.path || c.at >= c.path.length){
       if (c.state === 'in'){ c.state = 'park'; }
-      else { c.done = true; return; }
+      else {
+        /* The end of the road is the gate. Anywhere else, the path was lost
+           (or never found) - get a new one, waiting if there is none yet. */
+        const g = gateSpot();
+        if (Math.hypot(g[0] - c.x, g[1] - c.y) > 12){
+          if (!routeFor(c, g[0], g[1])){
+            c.wait = 2 + Math.random() * 2;
+            TRAF.routeWait = (TRAF.routeWait || 0) + 1;
+          }
+          return;
+        }
+        c.done = true; return;
+      }
     } else {
       const n = RNODE[c.path[c.at]];
       tx = n.x; ty = n.y;
@@ -1374,9 +1464,17 @@ function stepNpc(c, dt){
          already had: the grannies drive the Jazz. Tying the two together means
          the car park's population comes out of its own traffic rather than
          being declared separately. */
-      const kind = (c.model.sprite === 'jazz' && Math.random() < 0.62)
-                 ? 'granny' : 'shopper';
-      const w = addBeing(kind, c.bay.x + c.bay.toAisle * 1.4, c.bay.y);
+      /* Whoever is already IN it gets out. A car that tried to leave, could not,
+         and parked up again still has its owner at the wheel - it is only a new
+         arrival if nobody is. */
+      const back = c.veh && c.veh.ownerRid !== null && c.veh.ownerRid !== undefined
+                 ? TOWN[c.veh.ownerRid] : null;
+      const again = !!(back && back.visit && back.visit.out === null &&
+                       !residentOnSite(back) && KINDS[back.kind]);
+      const kind = again ? back.kind
+                 : (c.model.sprite === 'jazz' && Math.random() < 0.62) ? 'granny' : 'shopper';
+      const w = addBeing(kind, c.bay.x + c.bay.toAisle * 1.4, c.bay.y, again ? back : undefined);
+      if (again) TRAF.reparkedOwner = (TRAF.reparkedOwner || 0) + 1;
       w.home = [c.bay.x + c.bay.toAisle * 1.4, c.bay.y];
       w.ownBay = c.bay;
       w.spawned = true;
@@ -1388,7 +1486,8 @@ function stepNpc(c, dt){
          person remembers and what they will walk back to. */
       w.parkedAt = bayStand(c.bay);
       c.bay.ownerCid = w.cid;
-      if (c.veh){ c.veh.ownerPid = w.pid; if (w.res) w.res.car = { vid:c.veh.vid, sprite:c.veh.sprite }; }
+      if (c.veh){ c.veh.ownerPid = w.pid; c.veh.ownerRid = w.res ? w.res.rid : null;
+        if (w.res){ w.res.car = { vid:c.veh.vid, sprite:c.veh.sprite }; if (w.res.visit) w.res.visit.by = 'car'; } }
       c.done = true;
       TRAF.arrived++;
       return;
@@ -1400,7 +1499,13 @@ function stepNpc(c, dt){
     if (Math.hypot(tx - c.x, ty - c.y) < 2.0){
       c.state = 'go';
       const g = gateSpot();
-      if (!routeFor(c, g[0], g[1])){ c.done = true; TRAF.left++; return; }
+      /* No way out RIGHT NOW is not no way out: edges close while something
+         stands on them. Wait in the aisle and ask again, rather than vanish. */
+      if (!routeFor(c, g[0], g[1])){
+        c.state = 'out'; c.wait = 2 + Math.random() * 2;
+        TRAF.routeWait = (TRAF.routeWait || 0) + 1;
+        return;
+      }
     }
   }
 
@@ -1774,7 +1879,20 @@ function stepNpc(c, dt){
         c.state = 'go'; c.linedUp = false;
         c.bypasses = 1; c.replanned = 0;
         TRAF.fedUp = (TRAF.fedUp || 0) + 1;
+      } else if (routeFor(c, g[0], g[1])){
+        /* Out of ideas. This used to delete the car, which is popping. A real
+           driver with no ideas left switches the engine off, sits there, and
+           then has another go at the way out. Visible, honest, and the jam
+           around them usually moves on while they sulk. */
+        c.state = 'go'; c.linedUp = false;
+        c.fedUp = 1; c.bypasses = 1; c.replanned = 0;
+        c.jammed = 0; c.blocked = 0; c.queued = 0;
+        c.wait = 12 + Math.random() * 10;
+        TRAF.sulked = (TRAF.sulked || 0) + 1;
+        return;
       } else {
+        /* No route to the gate at all: the lattice is cut. Nothing honest is
+           left, and the census counts it. */
         c.done = true;
         TRAF.gaveUp = (TRAF.gaveUp || 0) + 1;
         return;
@@ -1782,10 +1900,39 @@ function stepNpc(c, dt){
     }
   }
   if (c.blocked > (c.model.wait === undefined ? 25 : c.model.wait)){
+    /* An ARRIVAL that gives up does what a departure that gives up does - it
+       does not evaporate. It drives back out of the gate and shops somewhere
+       else. The census caught twenty of these vanishing from the middle of the
+       west end in one day. Once only: a car that cannot even get out is the
+       last resort below, and is counted. */
+    if ((c.state === 'in' || c.state === 'park') && !c.quit){
+      if (c.bay){ c.bay.claimed = false; c.bay.leaving = false; }
+      const g = gateSpot();
+      if (routeFor(c, g[0], g[1])){
+        c.quit = true; c.bay = null; c.state = 'go'; c.linedUp = false;
+        c.blocked = 0; c.queued = 0;
+        TRAF.quit = (TRAF.quit || 0) + 1;
+        return;
+      }
+    }
     /* Gave up. An arrival abandons its claim; a departure that cannot get out
        parks itself again rather than evaporating, because a car that vanished
        from the middle of an aisle is exactly the popping this was built to
        stop. */
+    /* Already given up once and stuck again, with no space to go back to: sit
+       with the engine off and then try the gate again, as on the fed-up
+       ladder. Never evaporate. */
+    if (!c.bay || c.state === 'in' || c.state === 'park'){
+      const g = gateSpot();
+      if (routeFor(c, g[0], g[1])){
+        if (c.bay){ c.bay.claimed = false; c.bay.leaving = false; c.bay = null; }
+        c.state = 'go'; c.linedUp = false;
+        c.blocked = 0; c.queued = 0; c.jammed = 0;
+        c.wait = 12 + Math.random() * 10;
+        TRAF.sulked = (TRAF.sulked || 0) + 1;
+        return;
+      }
+    }
     if (c.bay){
       if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
       c.bay.claimed = false; c.bay.leaving = false;
@@ -2686,9 +2833,9 @@ function nearBoxes(w, x, y){
   if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
   return w.grid[j * w.gw + i];
 }
-function sdfAt(x, y){
+function sdfAt(x, y, noArena){
   const w = WORLD;
-  let d = -sdRect(x, y, w.arena);
+  let d = noArena ? GCELL : -sdRect(x, y, w.arena);
   const list = nearBoxes(w, x, y);
   if (list === null){
     for (let i = 0; i < w.boxes.length; i++){
@@ -2733,9 +2880,9 @@ function nearestKind(x, y){
 /* Central differences. The old build needed +/-0.7 because the chamfer field
    rippled; this field is exact, so a tight epsilon is stable and sharper. */
 const NEPS = 0.05;
-function sdfNormal(x, y){
-  const gx = sdfAt(x + NEPS, y) - sdfAt(x - NEPS, y);
-  const gy = sdfAt(x, y + NEPS) - sdfAt(x, y - NEPS);
+function sdfNormal(x, y, noArena){
+  const gx = sdfAt(x + NEPS, y, noArena) - sdfAt(x - NEPS, y, noArena);
+  const gy = sdfAt(x, y + NEPS, noArena) - sdfAt(x, y - NEPS, noArena);
   const m = Math.hypot(gx, gy);
   return m < 1e-9 ? [0, 0] : [gx / m, gy / m];
 }
@@ -7968,7 +8115,7 @@ function poseOr(b, pose){
   const sp = CAST[b.k.sprite];
   return (sp && sp.states[pose]) ? pose : b.look;
 }
-function addBeing(kind, x, y){
+function addBeing(kind, x, y, who){
   const k = KINDS[kind];
   const sp = CAST[k.sprite];
   /* Pick the LOOK from the variants only. Some sprites carry a genuine pose
@@ -8012,14 +8159,20 @@ function addBeing(kind, x, y){
               tx:x, ty:y, hold:0, carry:null, inStore:false, fed:0 };
   /* A name. People come from the town; animals get a number, and keep it. */
   const res = (hasLife(b) || kind === 'manager' || kind === 'trolleyboy')
-            ? claimResident(b) : null;
+            ? claimResident(b, who) : null;
   b.res = res;
   b.name = res ? res.name : (kind + ' ' + b.pid);
   if (!CENSUS.mute && hasLife(b)){
-    const rec = { pid:b.pid, name:b.name, kind:kind, rid:res ? res.rid : null,
-                  visits:[{ in:+simClockNow().toFixed(1), out:null, fate:null, by:null }] };
-    PEOPLE[b.pid] = rec;
-    if (res) res.visits.push(rec.visits[0]);
+    /* Coming back into view mid-visit (out of the shop doors) carries the visit
+       on; anybody else is starting one. */
+    let vis = res && res.visit && res.visit.out === null ? res.visit : null;
+    if (!vis){
+      vis = { in:+simClockNow().toFixed(1), out:null, fate:null, by:null, where:null, bay:null };
+      if (res){ res.visit = vis; res.visits.push(vis); }
+    }
+    vis.where = null;                     // on the map now
+    PEOPLE[b.pid] = { pid:b.pid, name:b.name, kind:kind, rid:res ? res.rid : null,
+                      visits:[vis] };
   }
   BEINGS.push(b);
   return b;
@@ -8157,7 +8310,14 @@ function walkTo(b, dt, speed){
   const ldx = gx - b.x, ldy = gy - b.y;
   const ld = Math.hypot(ldx, ldy) || 1;
   let ux = ldx / ld, uy = ldy / ld;
-  let ahead = sdfAt(b.x + ux * 1.1, b.y + uy * 1.1);
+  /* The arena is the car park's wall to a CAR. The bus stop and the gate path
+     are outside it, and to a pedestrian the edge of the arena was a wall too -
+     every bus passenger walked into it and slid along it for ever (46 of them
+     after a day, pinned at x 35.9, none ever arriving). A pedestrian outside
+     it, or walking to somewhere outside it, ignores it; the boxes still count. */
+  const noArena = sdRect(b.x, b.y, WORLD.arena) > -0.6 ||
+                  sdRect(b.tx, b.ty, WORLD.arena) > 0;
+  let ahead = sdfAt(b.x + ux * 1.1, b.y + uy * 1.1, noArena);
   /* Over, not round. Only cars: a bollard, a kerb or the store is still a thing
      a gull walks round, because it cannot see over any of them. */
   if (ahead < b.k.r + 0.2 && b.k.climbs){
@@ -8182,7 +8342,7 @@ function walkTo(b, dt, speed){
     }
   }
   if (ahead < b.k.r + 0.2){
-    const n = sdfNormal(b.x + ux * 1.1, b.y + uy * 1.1);
+    const n = sdfNormal(b.x + ux * 1.1, b.y + uy * 1.1, noArena);
     const tx = -n[1], ty = n[0];
     /* Committed, not recomputed - see the note above. */
     b.sideT = (b.sideT || 0) - dt;
@@ -8816,7 +8976,12 @@ function stepBeings(dt){
            reachable and still correct, and it was neither once a car had been
            nudged or set down slightly askew. Getting within a couple of metres
            of your own car is the actual condition for getting into it. */
-        if (bbx && Math.hypot(bbx.x - b.x, bbx.y - b.y) < 2.6){
+        /* 3.6, not 2.6: bayStand puts the spot 2.3 m out from the car's centre
+           and walkTo calls anywhere within 1.1 m of it arrived, so at 2.6 a
+           driver could stand at their own bumper for ever. The census found 53
+           of them doing exactly that; the invented drivers, spawned right
+           beside the car, had been hiding it. */
+        if (bbx && Math.hypot(bbx.x - b.x, bbx.y - b.y) < 3.6){
           b.moving = false;
           if (roomToLeave()){ beginDeparture(bay); b.gone = true; }
           /* No room on the aisle yet: wait by the car, which is what you do. */
@@ -9175,7 +9340,7 @@ function seedCast(){
         b.carSprite = mine.car.model ? mine.car.model.sprite : null;
         b.parkedAt = bayStand(mine);
         mine.ownerCid = b.cid;
-        if (mine.car.veh){ mine.car.veh.ownerPid = b.pid;
+        if (mine.car.veh){ mine.car.veh.ownerPid = b.pid; mine.car.veh.ownerRid = b.res ? b.res.rid : null;
           if (b.res) b.res.car = { vid:mine.car.veh.vid, sprite:mine.car.veh.sprite }; }
       } else b.arrivedBy = 'foot';
     } else b.arrivedBy = 'foot';
@@ -9189,6 +9354,32 @@ function seedCast(){
      working, off them if not. Otherwise the first minute of any run is the
      whole night shift walking out of the gate at once. */
   for (const b of BEINGS) if (!onShift(b)) b.away = true;
+  seedOwners();
+}
+
+/* Every car parked at opening belongs to somebody. The census found 112 of 118
+   with nobody behind them, and the departure channel then invented a driver
+   beside the car whenever one had to leave - fifty of them in the first seven
+   minutes, people popping into existence exactly as cars were forbidden to.
+   Long-stay cars belong to the shop's staff, at work. Everybody else is in the
+   shop, OFF THE MAP: a resident with an open visit and no being, which costs
+   nothing per tick, and who walks out of the doors when it is time to go.
+   Not in the test rig, which builds throwaway worlds and must stay exactly as
+   it was; there the old fallback still covers it. */
+function seedOwners(){
+  if (CENSUS.mute) return;
+  for (const bay of BAYS){
+    if (!bay.car || !bay.car.veh) continue;
+    if (ownerOfBay(bay) || offMapOwner(bay)) continue;
+    const jazz = bay.car.model && bay.car.model.sprite === 'jazz';
+    const kind = bay.longStay ? 'staff'
+               : (jazz && Math.random() < 0.62) ? 'granny' : 'shopper';
+    const r = freeResident(kind);
+    if (!r) continue;
+    openVisit(r, bay.longStay ? 'work' : 'shop', 'car', bay);
+    bay.car.veh.ownerRid = r.rid;
+    r.car = { vid:bay.car.veh.vid, sprite:bay.car.veh.sprite };
+  }
 }
 
 /* ================================================== painter's ordering =====
