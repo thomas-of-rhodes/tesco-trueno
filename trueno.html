@@ -712,11 +712,14 @@ const TOWN = (function(){
 const WANDER = {
   limit: 1200,          // the free period, real seconds (20 min)
   overstay: 0.05,       // chance a trip runs past it
-  tow: 1800             // step 6
+  tow: 1800,            // gone this long, with three tickets on it: the truck
+  ticketGap: 200        // between tickets once past the limit
 };
 function wanderStay(){
   return Math.random() < WANDER.overstay
-       ? WANDER.limit + 60 + Math.random() * 500          // lost track of time
+       ? (Math.random() < 0.35
+            ? WANDER.tow + 60 + Math.random() * 400         // lost all track of time
+            : WANDER.limit + 60 + Math.random() * 500)      // lost track of time
        : 360 + Math.random() * 720;                       // 6 to 18 minutes
 }
 /* Whether somebody who has just parked goes into town rather than the shop.
@@ -868,7 +871,14 @@ function stepTow(){
   for (const bay of BAYS){
     if (!bay.car || bay.towing){ continue; }
     if (ownerOfBay(bay) || offMapOwner(bay)){
-      bay.abandonedAt = undefined; bay.tickets = 0;
+      /* Somebody's. But somebody in town past the three hours, three tickets
+         on the windscreen, is about to have a very bad afternoon. Tickets are
+         NOT wiped here: they stay on the car until it leaves. */
+      bay.abandonedAt = undefined;
+      const plan = ticketPlan(bay);
+      if (plan && !TOW.truck && (bay.tickets || 0) >= TOW.maxTickets && now >= plan.towAt){
+        if (spawnTow(bay)) CENSUS.ev.towOverstay = (CENSUS.ev.towOverstay || 0) + 1;
+      }
       continue;
     }
     if (bay.abandonedAt === undefined){
@@ -881,14 +891,30 @@ function stepTow(){
   }
   if (TOW.truck && TOW.truck.done) TOW.truck = null;
 }
+/* When this car's next ticket is due and when the truck may come for it, or
+   null if it is not in trouble. Two ways in: abandoned (nobody behind it), or
+   an owner in town past the free three hours. */
+function ticketPlan(bay){
+  if (!bay.car || bay.towing) return null;
+  const n = bay.tickets || 0;
+  if (bay.abandonedAt !== undefined)
+    return { next:bay.abandonedAt + TOW.gap * (n + 1), towAt:bay.abandonedAt + TOW.after };
+  const r = offMapOwner(bay);
+  if (r && r.visit.where === 'town' && r.visit.left !== undefined){
+    const over = r.visit.left + WANDER.limit;
+    return { next:over + WANDER.ticketGap * n, towAt:r.visit.left + WANDER.tow };
+  }
+  return null;
+}
 /* The next car this manager should ticket, if any is due. */
 function ticketDue(b){
   const now = simClockNow();
   let best = null, bd = Infinity;
   for (const bay of BAYS){
-    if (!bay.car || bay.abandonedAt === undefined || bay.towing) continue;
+    const plan = ticketPlan(bay);
+    if (!plan) continue;
     const n = bay.tickets || 0;
-    if (n >= TOW.maxTickets || now < bay.abandonedAt + TOW.gap * (n + 1)) continue;
+    if (n >= TOW.maxTickets || now < plan.next) continue;
     if (bay.ticketBy && bay.ticketBy !== b && !beingAbsent(bay.ticketBy)) continue;
     const d = Math.hypot(bay.x - b.x, bay.y - b.y);
     if (d < bd){ bd = d; best = bay; }
@@ -1002,7 +1028,7 @@ function censusCarDone(c){
   /* The recovery truck going out: the car on its back is gone, properly. */
   if (c.tow){
     if (c.tow.loaded){
-      c.tow.veh.fate = 'towed';
+      c.tow.veh.fate = 'towed'; c.tow.veh.towedAt = simClockNow();
       CENSUS.ev.towed = (CENSUS.ev.towed || 0) + 1;
       censusNote('towed', vehName(c.tow.veh));
     } else c.tow.bay.towing = false;
@@ -1203,7 +1229,13 @@ function comeBack(r){
     veh.ownerPid = b.pid;
   } else {
     /* Not where they left it - towed, lifted, in the Tay. They go and look
-       anyway, and the lost-car chain takes it from there. */
+       anyway, and the lost-car chain takes it from there - unless it was
+       TOWED, in which case they will know the moment they see the space. */
+    for (const e of VEH) if (e.ownerRid === r.rid && e.fate === 'towed' &&
+                             e.towedAt !== undefined && e.towedAt > (v.left || 0)) b.towed = true;
+    /* Still on the back of the truck counts: it is gone from the space. */
+    if (TOW.truck && TOW.truck.tow && TOW.truck.tow.lifting &&
+        TOW.truck.tow.veh.ownerRid === r.rid) b.towed = true;
     b.ownBay = null; b.carVoid = true;
     b.parkedAt = v.bay ? bayStand(v.bay) : [g[0] + 20, g[1]];
   }
@@ -1920,6 +1952,12 @@ function stepNpc(c, dt){
       }
       if (t.loadT >= 7){
         c.state = 'go';
+        /* Away the way he is FACING. Free to take the shortest way, he took the
+           one behind him and spent a minute and a half turning a 6.6 m truck
+           round in a 8 m aisle. If he is already going with the arrows he
+           follows them out; if he came in against them he carries on. */
+        const f = flowAt(c.y), east = Math.cos(c.h) > 0;
+        if (f !== 0 && (f > 0) === east) c.rogue = false;
         const g = carGate(); routeFor(c, g[0], g[1]);
       }
       syncNpc(c);
@@ -3504,6 +3542,8 @@ function parkInBay(bay, model, rnd, w, at, veh){
 }
 function emptyBay(bay){
   if (bay.car && bay.car.veh && bay.car.veh.bay === bay) bay.car.veh.bay = null;
+  /* The tickets go with the car, not with the space. */
+  bay.tickets = 0; bay.abandonedAt = undefined; bay.ticketBy = null;
   WORLD.boxes[bay.box].off = true;
   bay.car = null;
 }
@@ -8864,6 +8904,19 @@ function walkTo(b, dt, speed){
      it, or walking to somewhere outside it, ignores it; the boxes still count. */
   const noArena = sdRect(b.x, b.y, WORLD.arena) > -0.6 ||
                   sdRect(b.tx, b.ty, WORLD.arena) > 0;
+  /* Inside something solid - a car parked on top of them while they were
+     cutting through its empty space, which happens. Walking only ever slides
+     ALONG a surface, so from inside one there was no way out at all: Derek
+     spent a ticket round shuffling inside a Jazz. Step out to the nearest
+     edge first. Gulls stand on cars on purpose and are left alone. */
+  if (!b.k.climbs){
+    const here = sdfAt(b.x, b.y, noArena);
+    if (here < 0.05){
+      const n = sdfNormal(b.x, b.y, noArena);
+      const out = -here + b.k.r + 0.05;
+      b.x += n[0] * out; b.y += n[1] * out;
+    }
+  }
   let ahead = sdfAt(b.x + ux * 1.1, b.y + uy * 1.1, noArena);
   /* Over, not round. Only cars: a bollard, a kerb or the store is still a thing
      a gull walks round, because it cannot see over any of them. */
@@ -9611,6 +9664,13 @@ function stepBeings(dt){
         b.h += dt * 1.1;                      // looking about
         b.state = b.look;
         b.moving = false;
+        if (b.muddleT <= 0 && b.towed){
+          /* No search: there is only one reason a car goes from a space while
+             its owner is three hours over in town. Off home, on foot or bus. */
+          b.life = 'toExit';
+          CENSUS.ev.towedOwners = (CENSUS.ev.towedOwners || 0) + 1;
+          continue;
+        }
         if (b.muddleT <= 0){
           b.life = 'hunting';
           b.huntT = 60 + Math.random() * 40;
@@ -10930,7 +10990,7 @@ function thoughtOf(b){
     if (b.kind === 'gull') return 'there is no sea out there';
     if (b.kind === 'fox') return 'no bins in the dark';
   }
-  if (b.carVoid && (b.life === 'muddled' || b.life === 'hunting'))
+  if (b.carVoid && !b.towed && (b.life === 'muddled' || b.life === 'hunting'))
     return pickLine(b, ['it\'s not anywhere. it\'s not ANYWHERE.',
                         'cars do not just vanish']);
   if (b.kind === 'gull'){
@@ -10972,6 +11032,8 @@ function thoughtOf(b){
                         'somebody has put one in the hedge again']);
   }
   const gran = b.kind === 'granny';
+  if (b.towed && b.life === 'toExit') return pickLine(b, ['forty quid to get it back. FORTY.',
+                                                          'i was ten minutes over']);
   if (b.forgot && b.life === 'toExit') return pickLine(b, ['i\'ll get the bus home, i think',
                                                            'lovely day for the bus']);
   if (b.toWork) return pickLine(b, ['clocking on', 'early shift. again.', 'right. tills.']);
@@ -10985,10 +11047,14 @@ function thoughtOf(b){
     case 'outDoors':  return 'that\'s that done';
     case 'toTown':    return gran ? pickLine(b, ['into town for a wee wander', 'the free parking, i\'ll not be long'])
                                   : pickLine(b, ['three hours free. plenty.', 'nipping into town']);
-    case 'toCar':     if (b.fromTown) return pickLine(b, ['back for the car', 'that went quicker than i thought']);
+    case 'toCar':     if (b.ownBay && (b.ownBay.tickets || 0) > 0 &&
+                          Math.hypot(b.ownBay.x - b.x, b.ownBay.y - b.y) < 14)
+                        return b.ownBay.tickets > 1 ? 'how many TICKETS' : 'a TICKET?';
+                      if (b.fromTown) return pickLine(b, ['back for the car', 'that went quicker than i thought']);
                       return gran ? 'now then, where did i put it'
                                   : pickLine(b, ['row D. or was it C.', 'this way, i think']);
-    case 'muddled':   return pickLine(b, ['...this is where i left it',
+    case 'muddled':   if (b.towed) return pickLine(b, ['they\'ve TOWED it', 'oh you are KIDDING me']);
+                      return pickLine(b, ['...this is where i left it',
                                           'i left it RIGHT here']);
     case 'hunting':   return pickLine(b, ['it\'s around here somewhere',
                                           'they all look the same']);
