@@ -1189,7 +1189,7 @@ function beingParts(b){
                X:b.x + q.f * ch - q.l * sh, Y:b.y + q.f * sh + q.l * ch,
                L:q.L, W:q.W, rot:b.h + q.rot,
                z0:b.z + (b.gz || 0) + bob + q.z + lean,
-               z1:b.z + (b.gz || 0) + bob + q.z + q.H + lean, col:q.col });
+               z1:b.z + (b.gz || 0) + bob + q.z + q.H + lean, col:toneCol(q, b.tones) });
   }
   if (brollyUp(b)){
     let top = 0;

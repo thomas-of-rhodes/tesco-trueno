@@ -10,6 +10,7 @@
    from sprite-editor.html to here runs through build_cast.py. Face overrides,
    mesh and glass are dropped: 23 boxes of 260 use them and the box renderer
    takes one colour. */
+const TONE_DEFAULT = { paint:'#8e9398', skin:'#c2a08a', hair:'#3a3735' };
 function parseCast(txt){
   /* v2 (2026-10-12): `size`, `anchor`, `part`/`endpart`, and `paint` as a
      colour. v1 files parse unchanged. */
@@ -52,14 +53,19 @@ function parseCast(txt){
            there is a night palette to read them against. */
         else if (kv[0] === 'lit') lit = kv[1] === undefined ? 1 : parseFloat(kv[1]);
       }
-      /* `paint`: the owner's colour, filled in at draw time. A neutral grey
-         stands in wherever nothing has been chosen. */
-      const paint = col === 'paint' || col.indexOf('paint:') === 0;
-      const paintK = paint && col.length > 6 ? (parseFloat(col.slice(6)) || 1) : 1;
-      const hex = paint ? '#8e9398' : col.length > 7 ? col.slice(0, 7) : col;   // drop any alpha
+      /* Named colours, filled in at draw time from whoever this is: `paint`
+         (a car's paint, an umbrella), `skin` and `hair` (a person's own).
+         `name:k` is that colour darkened to k. TONE_DEFAULT stands in when
+         nothing has been chosen. */
+      const tn = col.split(':')[0];
+      const tone = TONE_DEFAULT[tn] ? tn : null;
+      const toneK = tone && col.indexOf(':') > 0 ? (parseFloat(col.split(':')[1]) || 1) : 1;
+      const paint = tone === 'paint', paintK = toneK;
+      const hex = tone ? TONE_DEFAULT[tone] : col.length > 7 ? col.slice(0, 7) : col;   // drop any alpha
       for (const sg of (mir ? [1, -1] : [1]))
         st.push({ f:+w[1], l:(+w[2]) * sg, z:+w[3], L:+w[4], W:+w[5], H:+w[6],
-                  rot:rot * sg, col:hex, lit:lit, paint:paint, paintK:paintK, part:part, n:nm });
+                  rot:rot * sg, col:hex, lit:lit, paint:paint, paintK:paintK, tone:tone, toneK:toneK,
+                  part:part, n:nm });
     }
   }
   return out;
@@ -81,11 +87,18 @@ function spriteItems(name, x, y, h, z, o){
     const it = { cid:o ? o.cid : undefined, lit:q.lit,
                  X:x + q.f * ch - q.l * sh, Y:y + q.f * sh + q.l * ch,
                  L:q.L, W:q.W, rot:h + q.rot, z0:z + q.z, z1:z + q.z + q.H,
-                 col:(q.paint && o && o.paint) ? tint(o.paint, q.paintK) : q.col };
+                 col:toneCol(q, o && (o.tones || (o.paint ? { paint:o.paint } : null))) };
     if (o && o.each) o.each(q, it);
     out.push(it);
   }
   return out;
+}
+/* A box's colour for this particular owner: its named tone if it has one and
+   the owner has that tone, else what the sprite says. */
+function toneCol(q, tones){
+  if (q.tone && tones && tones[q.tone]) return tint(tones[q.tone], q.toneK);
+  if (q.tone) return tint(TONE_DEFAULT[q.tone], q.toneK);
+  return q.col;
 }
 /* `paint:0.75` - the paint colour scaled toward black. */
 function tint(hex, k){
@@ -1229,6 +1242,8 @@ function addBeing(kind, x, y, who){
             ? claimResident(b, who) : null;
   b.res = res;
   if (res && !res.look) res.look = b.look;
+  /* Their own skin and hair, from the town roll. */
+  b.tones = res && res.skin ? { skin:res.skin, hair:res.hair } : null;
   b.name = res ? res.name : (kind + ' ' + b.pid);
   if (!CENSUS.mute && hasLife(b)){
     /* Coming back into view mid-visit (out of the shop doors) carries the visit

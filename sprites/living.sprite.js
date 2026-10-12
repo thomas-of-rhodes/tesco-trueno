@@ -10,9 +10,10 @@
 # axes   f = along facing (+ forward), l = lateral (+ left), z = up. metres.
 # box    box <f> <l> <z>  <L> <W> <H>  <colour>  [flags]
 #          f,l are the box centre; z is its BASE. L is along f, W along l, H up.
-# colour #rrggbb | #rrggbbaa | none | paint | paint:<k>
-#          paint: the owner's colour (an umbrella's canopy, say)
-#          paint:0.75 is that colour darkened to 75%
+# colour #rrggbb | #rrggbbaa | none | paint | skin | hair   (each may take :<k>)
+#          paint: the owner's colour - a car's paint, an umbrella's canopy
+#          skin, hair: the person's own, chosen once per resident and kept
+#          :<k> darkens it, e.g. paint:0.75 for sills, hair:0.8 for shading
 # flags  n=<label>          a name, for the editor list
 #        mir=1              also draw the mirror image at -l (swaps lft/rgt)
 #        rot=<radians>      extra yaw, added to the sprite heading
@@ -47,7 +48,7 @@ state hunched
   box  0.00  0.00  0.06   0.38 0.48 0.70  #6f5f5c  n=skirt
   box -0.02  0.00  0.76   0.34 0.42 0.50  #8d6b70  n=coat
   box -0.04  0.00  1.26   0.32 0.38 0.12  #8d6b70  n=shoulders
-  box  0.04  0.00  1.38   0.22 0.22 0.20  #c2a08a  n=head
+  box  0.04  0.00  1.38   0.22 0.22 0.20  skin  n=head
   box  0.03  0.00  1.52   0.25 0.25 0.14  #5c7a74  n=headscarf
   box -0.08  0.30  0.70   0.17 0.13 0.20  #46352f  n=handbag
 state rigid
@@ -55,14 +56,14 @@ state rigid
   box  0.00  0.00  0.06   0.30 0.38 0.78  #6f5f5c  n=skirt
   box  0.00  0.00  0.84   0.28 0.34 0.60  #7d8489  n=coat
   box  0.00  0.00  1.44   0.28 0.40 0.10  #7d8489  n=shoulders
-  box  0.00  0.00  1.54   0.21 0.21 0.20  #c2a08a  n=head
-  box  0.00  0.00  1.70   0.24 0.24 0.10  #cbcec9  n=hair
+  box  0.00  0.00  1.54   0.21 0.21 0.20  skin  n=head
+  box  0.00  0.00  1.70   0.24 0.24 0.10  hair  n=hair
   box -0.06  0.26  0.86   0.15 0.12 0.18  #46352f  n=handbag
 state round
   box  0.00  0.13  0.00   0.24 0.14 0.06  #26282b  mir=1 n=shoe
   box  0.00  0.00  0.06   0.44 0.60 1.10  #6f5f5c  n=coat
   box -0.02  0.00  1.16   0.40 0.52 0.14  #8d6b70  n=shoulders
-  box  0.02  0.00  1.30   0.20 0.20 0.16  #c2a08a  n=head
+  box  0.02  0.00  1.30   0.20 0.20 0.16  skin  n=head
   box  0.02  0.00  1.42   0.23 0.23 0.12  #8d6b70  n=headscarf
   box -0.06  0.36  0.68   0.16 0.12 0.18  #46352f  n=handbag
 
@@ -73,17 +74,17 @@ state leaning
   box  0.04  0.00  0.06   0.30 0.40 0.80  #5b6169  n=legs
   box  0.08  0.00  0.86   0.32 0.46 0.54  #4a5a52  n=gilet
   box  0.12  0.00  1.40   0.30 0.50 0.12  #4a5a52  n=shoulders
-  box  0.20  0.00  1.52   0.22 0.22 0.20  #c2a08a  n=head
-  box  0.20  0.00  1.68   0.24 0.24 0.08  #8e9398  n=hair
+  box  0.20  0.00  1.52   0.22 0.22 0.20  skin  n=head
+  box  0.20  0.00  1.68   0.24 0.24 0.08  hair  n=hair
   box  0.16  0.30  0.98   0.34 0.13 0.36  #b9bcbe  mir=1 rot=0.25 n=arm
 state broad
   box  0.02  0.13  0.00   0.26 0.14 0.06  #26282b  mir=1 n=shoe
   box  0.00  0.00  0.06   0.28 0.36 0.76  #5b6169  n=legs
   box  0.00  0.00  0.82   0.34 0.52 0.60  #8e9398  n=torso
   box  0.00  0.00  1.42   0.34 0.60 0.12  #8e9398  n=shoulders
-  box  0.02  0.00  1.54   0.23 0.23 0.20  #c2a08a  n=head
-  box  0.02  0.00  1.70   0.25 0.25 0.08  #7d8489  n=hair
-  box  0.00  0.34  1.00   0.30 0.14 0.40  #c2a08a  mir=1 n=arm
+  box  0.02  0.00  1.54   0.23 0.23 0.20  skin  n=head
+  box  0.02  0.00  1.70   0.25 0.25 0.08  hair  n=hair
+  box  0.00  0.34  1.00   0.30 0.14 0.40  skin  mir=1 n=arm
 state mid-stride
   box  0.28  0.12  0.00   0.28 0.14 0.07  #26282b  n=shoe.lead
   box -0.24 -0.12  0.00   0.28 0.14 0.07  #26282b  n=shoe.trail
@@ -91,10 +92,10 @@ state mid-stride
   box -0.14 -0.12  0.07   0.22 0.17 0.77  #5b6169  rot=-0.18 n=leg.trail
   box  0.04  0.00  0.84   0.32 0.44 0.54  #6f5f5c  n=torso
   box  0.06  0.00  1.38   0.32 0.50 0.12  #6f5f5c  n=shoulders
-  box  0.12  0.00  1.50   0.22 0.22 0.20  #c2a08a  n=head
-  box  0.12  0.00  1.66   0.24 0.24 0.08  #3a3735  n=hair
-  box  0.26  0.31  1.04   0.30 0.13 0.26  #c2a08a  rot=0.40 n=arm.fwd
-  box -0.20 -0.31  1.04   0.30 0.13 0.26  #c2a08a  rot=-0.40 n=arm.back
+  box  0.12  0.00  1.50   0.22 0.22 0.20  skin  n=head
+  box  0.12  0.00  1.66   0.24 0.24 0.08  hair  n=hair
+  box  0.26  0.31  1.04   0.30 0.13 0.26  skin  rot=0.40 n=arm.fwd
+  box -0.20 -0.31  1.04   0.30 0.13 0.26  skin  rot=-0.40 n=arm.back
 
 sprite trolleyboy
 mass 70
@@ -103,7 +104,7 @@ state slouch
   box  0.00  0.00  0.06   0.28 0.38 0.78  #3c4148  n=legs
   box  0.00  0.00  0.84   0.32 0.46 0.50  #cfe03c  n=hivis
   box -0.04  0.00  1.34   0.30 0.42 0.08  #cfe03c  n=shoulders
-  box  0.04  0.00  1.42   0.21 0.21 0.20  #c2a08a  n=head
+  box  0.04  0.00  1.42   0.21 0.21 0.20  skin  n=head
   box  0.04  0.00  1.58   0.24 0.24 0.10  #2f3a44  n=cap
   box  0.18  0.00  1.58   0.12 0.22 0.05  #2f3a44  n=peak
   box  0.02  0.28  0.96   0.16 0.12 0.30  #a89a86  mir=1 n=arm
@@ -112,7 +113,7 @@ state smoking
   box  0.00  0.00  0.06   0.28 0.38 0.82  #3c4148  n=legs
   box  0.00  0.00  0.88   0.32 0.46 0.54  #cfe03c  n=hivis
   box  0.00  0.00  1.42   0.30 0.50 0.10  #cfe03c  n=shoulders
-  box  0.01  0.00  1.52   0.21 0.21 0.20  #c2a08a  n=head
+  box  0.01  0.00  1.52   0.21 0.21 0.20  skin  n=head
   box  0.01  0.00  1.68   0.24 0.24 0.10  #2f3a44  n=cap
   box  0.15  0.00  1.68   0.12 0.22 0.05  #2f3a44  n=peak
   box  0.16  0.05  1.58   0.10 0.04 0.03  #e8e4dc  n=cigarette
@@ -123,8 +124,8 @@ state lanky
   box  0.00  0.00  0.06   0.24 0.34 0.94  #3c4148  n=legs
   box  0.00  0.00  1.00   0.34 0.48 0.48  #cfe03c  n=hivis
   box  0.00  0.00  1.48   0.28 0.40 0.08  #4a5158  n=shoulders
-  box  0.02  0.00  1.56   0.20 0.20 0.20  #c2a08a  n=head
-  box  0.02  0.00  1.72   0.23 0.23 0.08  #3a3735  n=hair
+  box  0.02  0.00  1.56   0.20 0.20 0.20  skin  n=head
+  box  0.02  0.00  1.72   0.23 0.23 0.08  hair  n=hair
   box  0.00  0.30  1.10   0.13 0.11 0.36  #a89a86  mir=1 n=arm
 
 sprite manager
@@ -137,8 +138,8 @@ state suit
   box  0.21  0.00  1.12   0.05 0.08 0.26  #7a4043  n=tie
   box  0.00  0.00  1.44   0.34 0.58 0.12  #23272c  n=shoulders
   box  0.10  0.00  1.56   0.16 0.26 0.04  #dfe3e6  n=collar
-  box  0.02  0.00  1.60   0.22 0.22 0.20  #c2a08a  n=head
-  box  0.02  0.00  1.76   0.24 0.24 0.07  #2e2b28  n=hair
+  box  0.02  0.00  1.60   0.22 0.22 0.20  skin  n=head
+  box  0.02  0.00  1.76   0.24 0.24 0.07  hair  n=hair
   box  0.00  0.32  1.02   0.16 0.13 0.38  #23272c  mir=1 n=arm
 state clipboard
   box  0.02  0.12  0.00   0.28 0.14 0.06  #1b1d20  mir=1 n=shoe
@@ -146,8 +147,8 @@ state clipboard
   box  0.00  0.00  0.88   0.34 0.50 0.56  #35618c  n=shirt
   box  0.18  0.00  1.16   0.05 0.06 0.24  #d8d2c4  n=lanyard
   box  0.00  0.00  1.44   0.32 0.54 0.10  #35618c  n=shoulders
-  box  0.02  0.00  1.54   0.22 0.22 0.20  #c2a08a  n=head
-  box  0.02  0.00  1.70   0.24 0.24 0.08  #2e2b28  n=hair
+  box  0.02  0.00  1.54   0.22 0.22 0.20  skin  n=head
+  box  0.02  0.00  1.70   0.24 0.24 0.08  hair  n=hair
   box  0.32  0.00  1.00   0.06 0.34 0.30  #c7c8c3  n=clipboard
   box  0.14  0.30  1.06   0.28 0.13 0.24  #35618c  mir=1 rot=0.50 n=arm
 state looming
@@ -155,9 +156,9 @@ state looming
   box  0.00  0.00  0.06   0.28 0.38 0.86  #23272c  n=legs
   box  0.00  0.00  0.92   0.32 0.46 0.58  #2b3036  n=jacket
   box  0.00  0.00  1.50   0.32 0.62 0.12  #2b3036  n=shoulders
-  box  0.00  0.00  1.62   0.14 0.14 0.06  #c2a08a  n=neck
-  box  0.00  0.00  1.68   0.22 0.22 0.20  #c2a08a  n=head
-  box  0.00  0.00  1.84   0.24 0.24 0.07  #2e2b28  n=hair
+  box  0.00  0.00  1.62   0.14 0.14 0.06  skin  n=neck
+  box  0.00  0.00  1.68   0.22 0.22 0.20  skin  n=head
+  box  0.00  0.00  1.84   0.24 0.24 0.07  hair  n=hair
   box  0.00  0.34  1.08   0.15 0.13 0.38  #2b3036  mir=1 n=arm
 
 sprite gull

@@ -117,6 +117,23 @@ const NAMES = {
 };
 /* Its own generator, so building the town never draws from the world's seeded
    stream - the car park must come out byte-identical with or without a census. */
+/* Skin tones by group, and hair by group and generation, as weighted lists. */
+const SKIN = {
+  white:     [['#ecd0b8', 14], ['#e4c3a8', 22], ['#dbb596', 22], ['#d0a787', 16],
+              ['#c2a08a', 10], ['#e8bba5', 10], ['#c79a78', 6]],
+  asian:     [['#b78659', 3], ['#a5744c', 4], ['#8f6140', 3]],
+  mixed:     [['#c9966c', 4], ['#b07f58', 4], ['#9b6c48', 2]],
+  african:   [['#7a4e33', 4], ['#64402b', 4], ['#4e3222', 3]],
+  eastasian: [['#e3be97', 5], ['#d6ad85', 5]]
+};
+const HAIR = {
+  white:      [['#3d2a1f', 26], ['#5a3e2b', 24], ['#7a5a3e', 14], ['#9c7f55', 8], ['#c9ab70', 8],
+               ['#a0471f', 6], ['#1e1b19', 6], ['#8e9398', 8]],
+  olderWhite: [['#9da1a3', 26], ['#d9dbd8', 20], ['#c3c6c5', 16], ['#8a8278', 10],
+               ['#5a4030', 12], ['#c9b080', 9], ['#7a3b22', 7]],
+  dark:       [['#141210', 78], ['#2a1d16', 20], ['#8e9398', 2]],
+  olderDark:  [['#141210', 35], ['#9da1a3', 40], ['#d9dbd8', 25]]
+};
 function townRng(seed){
   let sd = seed;
   return function(){ sd = (sd * 1103515245 + 12345) & 0x7fffffff; return sd / 0x7fffffff; };
@@ -163,6 +180,29 @@ const TOWN = (function(){
   const hr = townRng(3600);
   for (const r of out){
     r.townish = (r.kind === 'shopper' && hr() < 0.30) || (r.kind === 'granny' && hr() < 0.15);
+  }
+  /* Skin and hair, once per resident, from a generator of their own so the
+     names and habits above never move. Proportions from the stats (Thomas,
+     2026-10-12): Scotland's 2022 census is ~93% White, and Dundee's children
+     are 16% non-White, the lowest of the cities - so ~90% White for the
+     1980s-born shoppers and staff, ~98% for the grannies' generation. The
+     rest follows the largest groups nationally: Pakistani 1.3%, Mixed 1.1%,
+     Indian 1.0%, African 1.0%, Chinese 0.9%. Red hair ~6% of Scots (a study
+     of over 500,000), not the often-quoted 13%. Hair follows skin and age. */
+  const tr = townRng(5150);
+  const pick = function(list){
+    let t = 0; for (const e of list) t += e[1];
+    let x = tr() * t;
+    for (const e of list){ x -= e[1]; if (x <= 0) return e[0]; }
+    return list[0][0];
+  };
+  for (const r of out){
+    const old = r.kind === 'granny';
+    const group = tr() < (old ? 0.98 : 0.90) ? 'white'
+                : pick([['asian', 4.6], ['mixed', 1.6], ['african', 1.6], ['eastasian', 1.4]]);
+    r.skin = pick(SKIN[group]);
+    r.hair = pick(group === 'white' ? (old ? HAIR.olderWhite : HAIR.white)
+                                    : (old ? HAIR.olderDark : HAIR.dark));
   }
   return out;
 })();
