@@ -1181,10 +1181,47 @@ function syncNpc(c){
   b.c = Math.cos(-c.h); b.s = Math.sin(-c.h);
 }
 
+/* Where to route TO, for a point in a one-way aisle: the node upstream of it,
+   so the last stretch is driven the way the aisle flows. The nearest node can
+   be downstream, and for the east-end prime bays by the doors it always was -
+   so every arrival for them came down the east column and turned into the
+   prime aisle against the flow, head-on, and the store end locked solid. */
+function destNode(tx, ty, rogue){
+  let l = 0, bd = Infinity;
+  for (let i = 0; i < LANES.length; i++){
+    const d = Math.abs(LANES[i] - ty);
+    if (d < bd){ bd = d; l = i; }
+  }
+  const f = laneFlow(l);
+  if (rogue || !f || bd > 3.5) return nearestNode(tx, ty);
+  let best = -1, bx = f > 0 ? -Infinity : Infinity;
+  for (let i = 0; i < RNODE.length; i++){
+    const n = RNODE[i];
+    if (!n || Math.abs(n.y - LANES[l]) > 0.01) continue;
+    if (f > 0 ? (n.x <= tx + 0.5 && n.x > bx) : (n.x >= tx - 0.5 && n.x < bx)){ bx = n.x; best = i; }
+  }
+  return best >= 0 ? best : nearestNode(tx, ty);
+}
 function routeFor(c, tx, ty){
-  const a = nearestNode(c.x, c.y), b = nearestNode(tx, ty);
-  const pth = routeTo(a, b);
+  const a = nearestNode(c.x, c.y), b = destNode(tx, ty, c.rogue);
+  /* Everybody keeps to the one-way system except a driver who has run out of
+     patience with it. */
+  let pth = routeTo(a, b, !c.rogue);
+  /* One-way leaves an aisle exactly one way out, so a trolley or a lorry in
+     the wrong place for a moment can leave a law-abiding driver with no legal
+     route at all. Then they do what anybody does: go the wrong way, once. */
+  if (!pth && !c.rogue){
+    pth = routeTo(a, b, false);
+    if (pth){ c.rogue = true; TRAF.forcedRogue = (TRAF.forcedRogue || 0) + 1; }
+  }
   c.path = pth; c.at = 0;
+  /* The nearest node can be one the car is already past. Two-way, driving
+     back to it cost a few metres; one-way, it means turning round in the aisle
+     to drive to a point behind you. Skip it if we are between it and the next. */
+  if (pth && pth.length > 1){
+    const n0 = RNODE[pth[0]], n1 = RNODE[pth[1]];
+    if ((c.x - n0.x) * (n1.x - n0.x) + (c.y - n0.y) * (n1.y - n0.y) > 0) c.at = 1;
+  }
   return pth !== null;
 }
 
@@ -1413,6 +1450,13 @@ function bypassBays(c){
 
 function stepNpc(c, dt){
   c.t += dt;
+  /* Safety net: an arrival with no bay to arrive at cannot be parked, and the
+     parking code reads c.bay without asking - a TypeError there kills the
+     frame loop. Whatever got it here, it leaves instead. */
+  if ((c.state === 'in' || c.state === 'park') && !c.bay){
+    c.state = 'go'; c.path = null; c.linedUp = false;
+    TRAF.noBay = (TRAF.noBay || 0) + 1;
+  }
   /* Dangling from the sky is not a journey. The hand owns the position; give the
      patience timers a rest too, or it files itself as a failed trip while it is
      being carried across the car park. */
@@ -1451,7 +1495,13 @@ function stepNpc(c, dt){
       const pn = c.at > 0 ? RNODE[c.path[c.at - 1]] : null;
       const lx = pn ? n.x - pn.x : n.x - c.x, ly = pn ? n.y - pn.y : n.y - c.y;
       const ll = Math.hypot(lx, ly);
-      if (ll > 1){ tx += -ly / ll * KEEP_LEFT; ty += lx / ll * KEEP_LEFT; }
+      /* In a one-way aisle there is nobody coming the other way, so the
+         law-abiding take the middle and get the room either side for cars
+         pulling out. Keep left is for the two-way roads, and for anybody
+         going the wrong way down a one-way one. */
+      const leg = pn ? edgeOf(c.path[c.at - 1], c.path[c.at]) : null;
+      const keep = (leg && leg.dir && !c.rogue) ? 0 : KEEP_LEFT;
+      if (ll > 1){ tx += -ly / ll * keep; ty += lx / ll * keep; }
       /* Advanced in ONE place. It used to step here and again at the bottom of
          the function, so every other waypoint was skipped and the route became
          a set of straight lines through the bay rows. */
@@ -1596,7 +1646,10 @@ function stepNpc(c, dt){
   }
   if (c.state === 'out'){
     rev = true; top = 2.2;
-    tx = c.bay.ax; ty = c.bay.ay;
+    /* Back out with the tail swung UPSTREAM, so the nose comes round pointing
+       the way the aisle flows - which is what a one-way aisle is for, and what
+       saves the three-point turn. */
+    tx = c.bay.ax - flowAt(c.bay.ay) * 1.5; ty = c.bay.ay;
     if (Math.hypot(tx - c.x, ty - c.y) < 2.0){
       c.state = 'go';
       const g = carGate();
@@ -1860,6 +1913,9 @@ function stepNpc(c, dt){
       c.jammed > 9.5 - 7.6 * temperOf(c) && (c.bypasses || 0) < 3){
     c.jammed = 0;
     c.bypasses = (c.bypasses || 0) + 1;
+    /* Patience gone, and with it any respect for the arrows. Only the short-
+       tempered: a Jazz will sit there all day rather than go the wrong way. */
+    if (temperOf(c) > 0.7 && !c.rogue && c.bypasses >= 2){ c.rogue = true; TRAF.rogue = (TRAF.rogue || 0) + 1; }
     if (!bypassBays(c)){
       /* Nothing to cut through, so turn round and go the long way instead -
          which is the last thing anybody tries and the most satisfying to watch. */
@@ -1992,10 +2048,16 @@ function stepNpc(c, dt){
         TRAF.sulked = (TRAF.sulked || 0) + 1;
         return;
       } else {
-        /* No route to the gate at all: the lattice is cut. Nothing honest is
-           left, and the census counts it. */
-        c.done = true;
-        TRAF.gaveUp = (TRAF.gaveUp || 0) + 1;
+        /* No route to the gate at all, even the wrong way: the lattice is
+           cut for the moment. Wait for it to open rather than vanish - as a
+           car LEAVING, because its space has already been given up above, and
+           an arrival with no bay crashes the parking code (it did, and in the
+           live page that stops the frame loop dead). The 'go' path-end rule
+           asks for a route again when the wait is over. */
+        c.state = 'go'; c.path = null; c.linedUp = false;
+        c.wait = 5 + Math.random() * 5;
+        c.jammed = 0; c.blocked = 0;
+        TRAF.cutWait = (TRAF.cutWait || 0) + 1;
         return;
       }
     }
@@ -2034,12 +2096,18 @@ function stepNpc(c, dt){
         return;
       }
     }
-    if (c.bay){
-      if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
+    if (c.bay && (c.state === 'out' || c.state === 'go')){
+      /* A departure still beside its own space: back into it and try later. */
+      parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
       c.bay.claimed = false; c.bay.leaving = false;
+      c.done = true;
+      TRAF.gaveUp = (TRAF.gaveUp || 0) + 1;
+      return;
     }
-    c.done = true;
-    TRAF.gaveUp = (TRAF.gaveUp || 0) + 1;
+    /* Nowhere to put it and no way out just now: wait, never vanish. */
+    c.wait = 5 + Math.random() * 5;
+    c.blocked = 0; c.jammed = 0;
+    TRAF.cutWait = (TRAF.cutWait || 0) + 1;
     return;
   }
 
@@ -5305,6 +5373,33 @@ const RNODE = [];        // { x, y, e:[edge indices] }
 const REDGE = [];        // { a, b, len, ok }
 const RSPACING = 16;
 
+/* One-way, by lane: +1 east (towards the store), -1 west, 0 both ways. The bay
+   aisles alternate, starting with the prime aisle running east past the doors;
+   the access road along the railway stays two-way - it is the way in and out,
+   and the lorry's road. The end columns (the 8 m west road and the east end)
+   are two-way too, so every bay has a short way in from one end and a short
+   way out at the other. Real Riverside is two-way throughout; the sim's aisles
+   are tighter than the real ones, so here they are not (Thomas, 2026-10-12). */
+function laneFlow(l){
+  if (l === LANES.length - 1) return 0;
+  return l % 2 === 0 ? 1 : -1;
+}
+/* The flow of the aisle a point is in. */
+function flowAt(y){
+  let best = 0, bd = Infinity;
+  for (let l = 0; l < LANES.length; l++){
+    const d = Math.abs(LANES[l] - y);
+    if (d < bd){ bd = d; best = l; }
+  }
+  return laneFlow(best);
+}
+function edgeOf(a, b){
+  for (const ei of RNODE[a].e){
+    const e = REDGE[ei];
+    if ((e.a === a && e.b === b) || (e.a === b && e.b === a)) return e;
+  }
+  return null;
+}
 function buildLattice(){
   LANES.length = 0; RNODE.length = 0; REDGE.length = 0;
   LANES.push(Y0 + WALK_W + PRIME_W + PAISLE / 2);          // the prime aisle
@@ -5333,7 +5428,10 @@ function buildLattice(){
     na.e.push(e); nb.e.push(e);
   };
   for (let l = 0; l < LANES.length; l++)
-    for (let k = 0; k + 1 < xs.length; k++) link(idx[l][k], idx[l][k + 1]);
+    for (let k = 0; k + 1 < xs.length; k++){
+      link(idx[l][k], idx[l][k + 1]);           // a is the west end of the edge
+      REDGE[REDGE.length - 1].dir = laneFlow(l);
+    }
   /* The cross-links, only at the two ends. */
   for (let l = 0; l + 1 < LANES.length; l++){
     link(idx[l][0], idx[l + 1][0]);
@@ -5379,7 +5477,7 @@ function nearestNode(x, y){
 
 /* Dijkstra. Sixty nodes, so the naive scan costs nothing and is easier to trust
    than a heap. */
-function routeTo(from, to){
+function routeTo(from, to, obey){
   const dist = new Float64Array(RNODE.length).fill(Infinity);
   const prev = new Int32Array(RNODE.length).fill(-1);
   const done = new Uint8Array(RNODE.length);
@@ -5393,6 +5491,7 @@ function routeTo(from, to){
     for (const ei of RNODE[u].e){
       const e = REDGE[ei];
       if (!e.ok) continue;
+      if (obey && e.dir && (e.dir > 0 ? u !== e.a : u !== e.b)) continue;
       const v = (e.a === u) ? e.b : e.a;
       const nd = dist[u] + e.len;
       if (nd < dist[v]){ dist[v] = nd; prev[v] = u; }
@@ -6193,6 +6292,9 @@ const AREAS = [
   { k:'grass',   x0:-20, x1:340, y0:-12,  y1:Y0 },
   { k:'tar',     x0:X0,  x1:X1 + 4, y0:Y0, y1:Y1 },
   { k:'lane',    x0:X0,  x1:X1,   y0:Y1 - ROAD_W, y1:Y1 },
+  /* The access road in from the mini-roundabout by the Seabraes footbridge,
+     along the railway: where every car now arrives and leaves. */
+  { k:'lane',    x0:X0 - 30, x1:X0, y0:Y1 - ROAD_W, y1:Y1 },
   { k:'walk',    x0:X0,  x1:X1 + 4, y0:Y0, y1:KERB_Y },
   { k:'island',  x0:X0 + 9, x1:X1 - 6, y0:ISLAND_Y - ISLAND_W / 2,
                  y1:ISLAND_Y + ISLAND_W / 2 },
@@ -9901,11 +10003,38 @@ function render(){
      it - so it goes on top, as deep blue-grey glass, and the glints say
      where a lamp is in it. */
   drawPuddles(dayK, nightK);
-  g2.strokeStyle = 'rgba(226,230,232,0.20)';
-  for (const b of BANDS) for (let x = X0 + 4; x < X1 - 5; x += BAY){
-    lineAt(x, b, x, b + 4.8, 'rgba(226,230,232,0.20)', 1);
-    lineAt(x, b + 10.8, x, b + 15.6, 'rgba(226,230,232,0.20)', 1);
+  /* Bay lines from the BAYS themselves, both sides of every space that exists.
+     They used to come off a fixed grid that started at the old west edge, so
+     when the west end became a road and the shelters moved into the rows, the
+     paint carried on regardless and the new layout was invisible. Shared edges
+     are drawn once. */
+  const painted = {};
+  for (const b of BAYS){
+    for (const sx of [-1, 1]){
+      const lx = b.x + sx * BAY / 2;
+      const key = Math.round(lx * 10) + ':' + Math.round(b.y);
+      if (painted[key]) continue;
+      painted[key] = 1;
+      lineAt(lx, b.y - 2.4, lx, b.y + 2.4, 'rgba(226,230,232,0.20)', 1);
+    }
   }
+  /* One-way arrows down the middle of each one-way aisle. */
+  for (let l = 0; l < LANES.length; l++){
+    const f = laneFlow(l);
+    if (!f) continue;
+    const ly = LANES[l];
+    for (let ax = X0 + 22; ax < X1 - 10; ax += 28){
+      lineAt(ax - 1.6 * f, ly, ax + 1.6 * f, ly, 'rgba(228,232,234,0.34)', 1.6);
+      lineAt(ax + 1.6 * f, ly, ax + 0.6 * f, ly - 0.7, 'rgba(228,232,234,0.34)', 1.6);
+      lineAt(ax + 1.6 * f, ly, ax + 0.6 * f, ly + 0.7, 'rgba(228,232,234,0.34)', 1.6);
+    }
+  }
+  /* The west road's centre line, and the access road's, dashed: they are roads,
+     and should read as roads rather than as tarmac with no bays on it. */
+  for (let y = Y0 + WALK_W + 1; y < Y1 - ROAD_W; y += 4)
+    lineAt(X0 + 4.2, y, X0 + 4.2, y + 2, 'rgba(228,232,234,0.30)', 1.2);
+  for (let x = X0 - 30; x < X0 + 4; x += 4)
+    lineAt(x, Y1 - ROAD_W / 2, x + 2, Y1 - ROAD_W / 2, 'rgba(228,232,234,0.30)', 1.2);
   for (const ry of RAILS) lineAt(-20, ry, 340, ry, 'rgba(158,164,168,0.55)', 1.2);
   /* Marked pedestrian crossings hatched across the aisles, as in the photos. They
      are painted, not solid - but they are where the people will walk. */
@@ -10273,6 +10402,9 @@ function thoughtOf(b){
     if (rainHere(b.x, b.y) > 0.7) return 'wipers on full';
     if (b.airborne) return 'AAAAAAA';
     if (b.rolling) return 'the handbrake. the HANDBRAKE.';
+    if (b.rogue && (b.state === 'go' || b.state === 'in'))
+      return pickLine(b, ['one way, my foot', 'i\'m not going all the way round',
+                          'it\'s only one way if you let it be']);
     if (b.onDetour) return hot ? 'i am not waiting for this'
                                : 'i\'ll just go round, then';
     if ((b.jammed || 0) > 4) return hot ? pickLine(b, ['come ON', 'oh for heaven\'s sake'])
