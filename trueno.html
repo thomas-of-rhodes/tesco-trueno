@@ -847,6 +847,68 @@ function stepShifts(){
     else SHIFTS.queue[i] = simClockNow() + 8;      // no room just now
   }
 }
+/* Abandoned cars. A parked car with nobody behind it - owner in the Tay, in
+   the void, vanished, or a granny who went home on the bus and forgot - gets
+   an abandonedAt. A manager tickets it every `gap` seconds, three times, and
+   at `after` the recovery truck comes for it. Real seconds: 480 is 0.4 of a
+   sim day, so three tickets and a tow take about a day and a half, which is
+   "there for a day or two" on the clock. Step 6 will use the same tickets for
+   overstayers. */
+const TOW = { gap:480, after:1800, maxTickets:3, truck:null };
+const GRANNY_FORGET = 0.04;          // a granny who came by car and forgets it
+/* The recovery driver is paid by the tow and wants his tea (Thomas,
+   2026-10-12: "a bit impulsive and careless... a little nudge here or there
+   is fine"). So: the Audi's temper and urgency in a 6.6 m truck, and no
+   regard for the one-way arrows from the moment he arrives. */
+const TOW_MODEL = { sprite:'tow', l:6.6, w:2.35, care:0.5, p:0,
+                    top:6.6, urge:0.85, accel:3.6, nerve:1.0, wait:16,
+                    temper:0.95, wetSlow:0.0 };
+function stepTow(){
+  const now = simClockNow();
+  for (const bay of BAYS){
+    if (!bay.car || bay.towing){ continue; }
+    if (ownerOfBay(bay) || offMapOwner(bay)){
+      bay.abandonedAt = undefined; bay.tickets = 0;
+      continue;
+    }
+    if (bay.abandonedAt === undefined){
+      bay.abandonedAt = now; bay.tickets = 0;
+      CENSUS.ev.abandoned = (CENSUS.ev.abandoned || 0) + 1;
+      censusNote('abandoned', vehName(bay.car.veh));
+    }
+    if (!TOW.truck && (bay.tickets || 0) >= TOW.maxTickets &&
+        now - bay.abandonedAt >= TOW.after) spawnTow(bay);
+  }
+  if (TOW.truck && TOW.truck.done) TOW.truck = null;
+}
+/* The next car this manager should ticket, if any is due. */
+function ticketDue(b){
+  const now = simClockNow();
+  let best = null, bd = Infinity;
+  for (const bay of BAYS){
+    if (!bay.car || bay.abandonedAt === undefined || bay.towing) continue;
+    const n = bay.tickets || 0;
+    if (n >= TOW.maxTickets || now < bay.abandonedAt + TOW.gap * (n + 1)) continue;
+    if (bay.ticketBy && bay.ticketBy !== b && !beingAbsent(bay.ticketBy)) continue;
+    const d = Math.hypot(bay.x - b.x, bay.y - b.y);
+    if (d < bd){ bd = d; best = bay; }
+  }
+  return best;
+}
+function spawnTow(bay){
+  if (!roomToLeave() || !gateClear()) return null;
+  const g = carGate();
+  const c = makeNpc(TOW_MODEL, g[0] + 0.5, g[1], 0, 'in');
+  c.rogue = true;                     // arrows are for people paid by the hour
+  c.tow = { bay:bay, veh:bay.car.veh, model:bay.car.model, loadT:0, lifting:false, loaded:false };
+  if (!routeFor(c, bay.ax, bay.ay)){ CARS.pop(); return null; }
+  bay.towing = true;
+  syncNpc(c);
+  TOW.truck = c;
+  CENSUS.ev.towCalled = (CENSUS.ev.towCalled || 0) + 1;
+  censusNote('tow called', vehName(bay.car.veh) + ' after ' + bay.tickets + ' tickets');
+  return c;
+}
 /* Hand a new being a resident of its kind who is not already on site. "On
    site" is checked against BEINGS itself rather than trusted from a flag,
    because the test rig empties and restores BEINGS wholesale and would leave
@@ -937,6 +999,14 @@ function censusCarDone(c){
   const v = c.veh;
   if (v.bay && v.bay.car && v.bay.car.veh === v){ CENSUS.ev.carsParked++; return; }
   if (v.fate === 'void'){ CENSUS.ev.carsVoid++; return; }
+  /* The recovery truck going out: the car on its back is gone, properly. */
+  if (c.tow){
+    if (c.tow.loaded){
+      c.tow.veh.fate = 'towed';
+      CENSUS.ev.towed = (CENSUS.ev.towed || 0) + 1;
+      censusNote('towed', vehName(c.tow.veh));
+    } else c.tow.bay.towing = false;
+  }
   const g = carGate();
   if (Math.hypot(c.x - g[0], c.y - g[1]) < 12){
     v.fate = 'exited'; CENSUS.ev.carsExited++;
@@ -1093,6 +1163,7 @@ function stepCensus(dt){
   CENSUS.t = 0;
   stepTown();
   stepShifts();
+  stepTow();
   const c = census();
   CENSUS.last = c; CENSUS.samples++;
   const oc = c.cars.orphanLong + c.cars.orphanShort;
@@ -1411,6 +1482,9 @@ function spawnDeparture(){
   for (const b of BAYS){
     if (!b.car || b.leaving) continue;
     if (b.longStay) continue;              // the staff are not going anywhere
+    /* Nor is an abandoned car: nobody is coming for it but the truck. The old
+       fallback below would otherwise invent a stranger to drive it away. */
+    if (b.abandonedAt !== undefined || b.towing) continue;
     /* And somebody else's car is not available to be driven away. The departure
        channel used to pick any occupied bay, so a car whose owner was still in
        the shop would simply leave without her - and she would come out, walk to
@@ -1607,7 +1681,7 @@ function stepNpc(c, dt){
   /* Safety net: an arrival with no bay to arrive at cannot be parked, and the
      parking code reads c.bay without asking - a TypeError there kills the
      frame loop. Whatever got it here, it leaves instead. */
-  if ((c.state === 'in' || c.state === 'park') && !c.bay){
+  if ((c.state === 'in' || c.state === 'park') && !c.bay && !c.tow){
     c.state = 'go'; c.path = null; c.linedUp = false;
     TRAF.noBay = (TRAF.noBay || 0) + 1;
   }
@@ -1623,7 +1697,7 @@ function stepNpc(c, dt){
 
   if (c.state === 'in' || c.state === 'go'){
     if (!c.path || c.at >= c.path.length){
-      if (c.state === 'in'){ c.state = 'park'; }
+      if (c.state === 'in'){ c.state = c.tow ? 'load' : 'park'; }
       else {
         /* The end of the road is the gate. Anywhere else, the path was lost
            (or never found) - get a new one, waiting if there is none yet. */
@@ -1807,6 +1881,48 @@ function stepNpc(c, dt){
       if (c.shopStaff){ w.toWork = true; w.staff = true; c.bay.longStay = true; }
       c.done = true;
       TRAF.arrived++;
+      return;
+    }
+  }
+  /* The recovery truck at its job: up to the car, stop, lift it onto the bed,
+     and away. */
+  if (c.state === 'load'){
+    const t = c.tow, bay = t.bay;
+    /* Pull up IN THE LANE alongside the car, still pointing along the aisle,
+       and winch it up from there. Driving to the bay's own approach point put a
+       6.6 m truck nose-first across the aisle, and once loaded it was pointing
+       into the parked row opposite with no room to turn out of it. */
+    let ly = LANES[0], ld = Infinity;
+    for (const L of LANES) if (Math.abs(L - bay.ay) < ld){ ld = Math.abs(L - bay.ay); ly = L; }
+    tx = bay.x; ty = ly; top = 2.0; arrive = 1.2;
+    const there = Math.abs(bay.x - c.x) < 2.5 && Math.abs(ly - c.y) < 2.2;
+    if (there || t.lifting){
+      c.spd *= Math.max(0, 1 - 6 * dt);
+      if (!t.lifting){
+        /* Somebody moved it (god, usually). Nothing to take. */
+        if (!bay.car || bay.car.veh !== t.veh){
+          bay.towing = false; c.state = 'go';
+          const g = carGate(); routeFor(c, g[0], g[1]);
+          return;
+        }
+        const bx = WORLD.boxes[bay.box];
+        t.from = { x:bx.x, y:bx.y, a:bx.a };
+        t.lifting = true;
+        emptyBay(bay);
+        bay.claimed = true;
+      }
+      t.loadT += dt;
+      if (t.loadT >= 4.5 && !t.loaded){
+        t.loaded = true;
+        bay.claimed = false; bay.towing = false; bay.ownerCid = null;
+        bay.abandonedAt = undefined; bay.tickets = 0; bay.longStay = false;
+        bay.ticketBy = null;
+      }
+      if (t.loadT >= 7){
+        c.state = 'go';
+        const g = carGate(); routeFor(c, g[0], g[1]);
+      }
+      syncNpc(c);
       return;
     }
   }
@@ -2155,7 +2271,7 @@ function stepNpc(c, dt){
     c.jammed = 0; c.blocked = 0; c.queued = 0;
     c.fedUp = (c.fedUp || 0) + 1;
     let moved = false;
-    if (c.state === 'in' && (c.baySwaps || 0) < 3){
+    if (c.state === 'in' && !c.tow && (c.baySwaps || 0) < 3){
       /* Somewhere ELSE, and the distance floor is the whole point: re-picking
          on desirability alone hands back a bay in the same contested row, which
          is the row it cannot get through. */
@@ -2471,7 +2587,45 @@ function stepCars(dt){
     if (CARS[i].done){ censusCarDone(CARS[i]); CARS.splice(i, 1); }
 }
 
+/* The recovery truck: no sprite in cast.sprite.txt, so boxes in code like the
+   bus. Cab at the front, a flat bed behind, an amber beacon, and whatever it
+   is carrying - lifted from the bay to the bed in an arc while it loads. */
+function towParts(c){
+  const out = [], ch = Math.cos(c.h), sh = Math.sin(c.h);
+  const put = function(f, l, z0, z1, L, W, col, lit){
+    out.push({ cid:c.cid, lit:lit || 0, X:c.x + f * ch - l * sh, Y:c.y + f * sh + l * ch,
+               L:L, W:W, rot:c.h, z0:z0, z1:z1, col:col });
+  };
+  put(0, 0, 0.35, 0.75, 6.4, 2.2, '#2b3135');                 // chassis
+  put(2.35, 0, 0.75, 2.45, 1.7, 2.25, '#d8a520');              // cab
+  put(2.95, 0, 1.30, 2.10, 0.12, 2.0, '#20303a');              // windscreen
+  put(-0.95, 0, 0.75, 0.95, 4.3, 2.35, '#4a5258');             // the bed
+  const flash = (Math.sin(simClockNow() * 9) > 0) ? 1 : 0;
+  put(2.35, -0.6, 2.45, 2.62, 0.3, 0.3, flash ? '#ffcc33' : '#7a5a10', flash);
+  put(2.35, 0.6, 2.45, 2.62, 0.3, 0.3, flash ? '#7a5a10' : '#ffcc33', 1 - flash);
+  for (const f of [2.2, -1.6]) for (const sgn of [1, -1])
+    put(f, sgn * 1.05, 0.0, 0.75, 0.95, 0.3, '#14181b');       // wheels
+  const t = c.tow;
+  if (t && (t.lifting || t.loaded)){
+    const sp = CAST[t.model.sprite];
+    const boxes = sp ? sp.states[sp.order[0]] : null;
+    if (boxes){
+      const k = t.loaded ? 1 : Math.min(1, t.loadT / 4.5);
+      const bedX = c.x - 0.95 * ch, bedY = c.y - 0.95 * sh;
+      const fx = t.from ? t.from.x : bedX, fy = t.from ? t.from.y : bedY;
+      const X = fx + (bedX - fx) * k, Y = fy + (bedY - fy) * k;
+      const A = (t.from ? t.from.a : c.h) + angDiff(c.h, t.from ? t.from.a : c.h) * k;
+      const Z = 0.95 * k + Math.sin(Math.PI * k) * 1.1;
+      const ca = Math.cos(A), sa = Math.sin(A);
+      for (const q of boxes)
+        out.push({ cid:c.cid, lit:q.lit, X:X + q.f * ca - q.l * sa, Y:Y + q.f * sa + q.l * ca,
+                   L:q.L, W:q.W, rot:A + q.rot, z0:q.z + Z, z1:q.z + q.H + Z, col:q.col });
+    }
+  }
+  return out;
+}
 function npcParts(c){
+  if (c.model.sprite === 'tow') return towParts(c);
   const sp = CAST[c.model.sprite];
   if (!sp) return [];
   const boxes = sp.states[sp.order[0]];
@@ -9190,6 +9344,29 @@ const BEHAVE = {
   manager: function(b, dt){
 
     if (b.hold > 0){ b.hold -= dt; b.state = b.look; return; }
+    /* The ticket round, before the gulls and before the door: an abandoned car
+       is the one thing on the car park that is officially his problem. Walk
+       out to it, stand there writing for a couple of seconds, stick it on. */
+    const tb = (b.ticketBay && b.ticketBay.car && b.ticketBay.abandonedAt !== undefined)
+             ? b.ticketBay : ticketDue(b);
+    b.ticketBay = tb || null;
+    if (tb){
+      tb.ticketBy = b;
+      const st = bayStand(tb), bx = WORLD.boxes[tb.box];
+      b.tx = st[0]; b.ty = st[1]; b.state = b.look;
+      const near = bx && Math.hypot(bx.x - b.x, bx.y - b.y) < 3.6;
+      if (near || walkTo(b, dt, b.k.speed)){
+        if (near){
+          tb.tickets = (tb.tickets || 0) + 1;
+          tb.ticketBy = null; b.ticketBay = null;
+          b.ticketed = simClockNow();
+          b.hold = 2.5;                       // writing it out
+          CENSUS.ev.tickets = (CENSUS.ev.tickets || 0) + 1;
+          if (typeof exciteAt === 'function') exciteAt(tb.x, tb.y, 2.0);
+        }
+      }
+      return;
+    }
     /* His shift. With fourteen gulls about he always had one inside thirteen
        metres, so he was permanently mid-grievance and never once got as far as
        the door - which is funny for a minute and then he is just a man
@@ -9377,6 +9554,15 @@ function stepBeings(dt){
         const dr = nearestPlace(PLACES.doors, b.x, b.y);
         b.x = dr[0]; b.y = dr[1] + 1.2;
         b.life = (b.arrivedBy === 'car' && b.parkedAt) ? 'toCar' : 'toExit';
+        /* Now and then a granny who drove here comes out, sees the bus, and
+           goes home on it - the car entirely forgotten. It becomes one of the
+           abandoned, and gets the tickets and the truck in due course. */
+        if (b.life === 'toCar' && b.kind === 'granny' && !CENSUS.mute &&
+            Math.random() < GRANNY_FORGET){
+          b.life = 'toExit'; b.forgot = true;
+          CENSUS.ev.forgot = (CENSUS.ev.forgot || 0) + 1;
+          censusNote('forgot her car', b.name);
+        }
         continue;
       }
       /* --- back to where they left it */
@@ -10344,6 +10530,15 @@ function render(){
                    X:bx.x + q.f * ch - q.l * sh, Y:bx.y + q.f * sh + q.l * ch,
                    L:q.L, W:q.W, rot:bx.a + q.rot,
                    z0:q.z, z1:q.z + q.H, col:q.col });
+    /* Parking tickets, one yellow slip each, on the roof by the windscreen
+       where the camera can see them. */
+    for (let k = 0; k < (bay.tickets || 0); k++){
+      const f = 0.55, l = -0.45 + k * 0.42;
+      items.push({ cid:'p' + bay.box, lit:0,
+                   X:bx.x + f * ch - l * sh, Y:bx.y + f * sh + l * ch,
+                   L:0.34, W:0.26, rot:bx.a + 0.15 * (k - 1),
+                   z0:1.47, z1:1.50, col:'#f2d23c' });
+    }
   }
   /* Height is nearly unreadable in an isometric view without one of these: a
      lifted trolley just looks like a trolley slightly further away. The shadow is
@@ -10637,6 +10832,10 @@ function thoughtOf(b){
      everybody else - they are just having them at the wheel. Temper picks the
      register: the Jazz is in no rush and the A4 is already late. */
   if (b.model){
+    if (b.tow) return b.tow.loaded ? pickLine(b, ['nobody ever comes back for these', 'right. home.',
+                                                  'another one for the pound'])
+                                   : pickLine(b, ['just doing my job, pal', 'paid by the tow, pal',
+                                                  'one way? not for me it\'s not']);
     const hot = temperOf(b) > 0.7;
     if (b.held) return 'why am i in the air';
     if (b.swim) return b.depth > 0.6 ? 'glub' : 'oh no. oh no no no.';
@@ -10743,6 +10942,10 @@ function thoughtOf(b){
   }
   if (b.kind === 'fox') return pickLine(b, ['bins', 'the bins are this way',
                                             'nobody here but me']);
+  if (b.kind === 'manager' && (b.ticketBay || (b.ticketed && simClockNow() - b.ticketed < 4)))
+    return b.night ? pickLine(b, ['fine. a ticket.', 'whose is this even', 'not paid enough for parking'])
+                   : pickLine(b, ['you can\'t just LEAVE that there', 'third time. THIRD.',
+                                  'that is a ticket, sunshine']);
   if (b.kind === 'manager' && b.night){
     if (HELP.length) return liveBeing('trolleyboy') ? 'somebody else can get that'
                                                     : 'nobody to radio. it\'s just me.';
@@ -10769,6 +10972,8 @@ function thoughtOf(b){
                         'somebody has put one in the hedge again']);
   }
   const gran = b.kind === 'granny';
+  if (b.forgot && b.life === 'toExit') return pickLine(b, ['i\'ll get the bus home, i think',
+                                                           'lovely day for the bus']);
   if (b.toWork) return pickLine(b, ['clocking on', 'early shift. again.', 'right. tills.']);
   if (b.staff && (b.life === 'toCar' || b.life === 'outDoors'))
     return pickLine(b, ['end of shift. finally.', 'home, feet up', 'never again. see you tomorrow.']);
