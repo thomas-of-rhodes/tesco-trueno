@@ -24,7 +24,7 @@ button.on{border-color:#4d7f96;color:#8fc3d8}
    checklist, and on a narrow window - which is how this gets watched, in a pane
    beside a conversation - anything sharing a corner simply lands on top of what
    is already there. Bottom left is the one corner nothing else wants. */
-#cen{position:fixed;left:10px;bottom:10px;width:230px;background:rgba(9,11,13,.9);
+#cen{position:fixed;left:10px;bottom:10px;width:300px;background:rgba(9,11,13,.9);
   border:1px solid #23282d;border-radius:2px;padding:9px 11px;z-index:5;font-size:11.5px}
 #cen h4{margin:0 0 6px;font-size:10.5px;font-weight:400;color:#6c7780;
   letter-spacing:.06em;text-transform:uppercase}
@@ -439,7 +439,7 @@ state alert
 <div id="hint">he is driving himself &middot; press <b>autopilot</b> to take over &middot;
   arrows to steer, space for handbrake &middot; <span id="zoomR">wheel to zoom</span>
   &middot; <b>god mode</b> to pick things up</div>
-<div id="cen"><h4>who is here</h4><table id="cenT"></table></div>
+<div id="cen"><h4>who is here &mdash; the census</h4><table id="cenT"></table></div>
 <div id="tel"><h4>what he is doing</h4><table id="telT"></table></div>
 <div id="tests"><h4>verification &mdash; handover &sect;10</h4><table id="testT"></table></div>
 <div id="plan"><h4>where we are</h4>
@@ -5146,6 +5146,12 @@ function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
   if (WORLD.strays) seedTrolleys();
   const bSave = BEINGS.slice();
   const cSave2 = CARS.slice();
+  /* BAYS too. buildSite empties and refills it for the throwaway world, and it
+     was never put back - so after a suite run the bays the live car park drew
+     and counted were the LAST TEST WORLD's, over the live world's boxes. With
+     the census on, every one of those strangers' cars was ownerless, i.e.
+     abandoned, and the managers would have ticketed the lot. */
+  const baySave = BAYS.slice();
   /* The rig builds and destroys whole worlds; none of it is the town's history. */
   const censusMuteSave = CENSUS.mute;
   CENSUS.mute = true;
@@ -5218,6 +5224,8 @@ function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
   for (const b of bSave) BEINGS.push(b);
   CARS.length = 0;
   for (const c of cSave2) CARS.push(c);
+  BAYS.length = 0;
+  for (const b of baySave) BAYS.push(b);
   WORLD = wSave; visit = vSave; simClock = cSave; TOD = todSave;
   LORRY_PIN = lpSave; TRAFFIC_OFF = tfSave;
   CENSUS.mute = censusMuteSave;
@@ -5299,6 +5307,12 @@ function runTests(){
   const wxSave0 = { wet:WX.wet, rain:WX.rain, spell:WX.spell, next:WX.next };
   const pinSave0 = WET_PIN;
   WET_PIN = 0; WX.wet = 0; WX.rain = 0; WX.spell = 0;
+  /* Several rigs call buildSite directly, outside driveSim, and buildSite
+     refills BAYS for its throwaway world. Put the live car park's bays back at
+     the end, or the page carries on with a test world's bays over the live
+     boxes - every car in them ownerless, i.e. 'abandoned'. The census row
+     below is what caught it. */
+  const baysSave0 = BAYS.slice();
   const add = function(name, got, want, pass){
     rows.push({ name:name, got:got, want:want, pass:pass });
   };
@@ -5546,6 +5560,24 @@ function runTests(){
        ', shuffle ' + loose.man.sh + ', bail ' + loose.man.bail, 'entry gates firing');
   base('single 60 s run', loose.stuckPct.toFixed(1) + '% wedged, ' +
        loose.dmg.toFixed(0) + ' kJ', 'one sample from a wide distribution');
+
+  BAYS.length = 0;
+  for (const b of baysSave0) BAYS.push(b);
+  /* The census, on the LIVE car park (every rig above ran muted, in its own
+     world, and has been put back). Every parked car leads to a person or has
+     been put down as abandoned; every driver still has a car; and since the
+     page loaded nobody has appeared from nowhere and no car has evaporated. */
+  {
+    const c = census();
+    const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;
+    const unacc = Math.max(0, c.cars.orphanLong + c.cars.orphanShort - abandoned);
+    add('census: every car accounted for', c.cars.parked + ' parked, ' + unacc +
+        ' unaccounted, ' + abandoned + ' abandoned, ' + c.people.carless + ' carless',
+        '0 unaccounted, 0 carless', unacc === 0 && c.people.carless === 0);
+    const inv = CENSUS.ev.inventedDrivers || 0, van = CENSUS.ev.carsVanished || 0;
+    add('census: nobody popped in or out', inv + ' invented, ' + van + ' vanished since load',
+        '0 and 0', inv === 0 && van === 0);
+  }
 
   let html = '';
   let passed = 0;
@@ -10804,7 +10836,8 @@ function plain(){
      takes a being out of the draw list and out of everybody's perception, so
      the two numbers always add up to the cast actually on the premises. */
   const cen = document.getElementById('cenT');
-  if (cen){
+  /* Only while it is on screen: it is a dev overlay, hidden by default. */
+  if (cen && $('cen').style.display !== 'none'){
     let inShop = 0, outside = 0, birds = 0, staffIn = 0;
     for (const b of BEINGS){
       if (b.gone || b.away) continue;
@@ -10816,13 +10849,38 @@ function plain(){
     const lost = BEINGS.filter(function(q){
       return ['muddled','hunting','seekHelp','waitHelp','following'].indexOf(q.life) >= 0;
     }).length;
+    /* The census proper (step 7): everybody accounted for, on the map or off
+       it. Read from the once-a-second snapshot rather than recounted every
+       frame. Off-map people are residents with an open visit and no being. */
+    const cs = CENSUS.last;
+    const om = cs ? cs.offMap : { shop:0, work:0, town:0, car:0 };
+    const cc = cs ? cs.cars : null;
+    const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;
+    const orphans = cc ? cc.orphanLong + cc.orphanShort : 0;
+    const unaccounted = Math.max(0, orphans - abandoned);
+    const ticketed = BAYS.filter(function(q){ return q.car && (q.tickets || 0) > 0; }).length;
     const rows2 = [
-      ['<b>in Tesco</b>', inShop, 1],
+      ['<b>in Tesco</b>', inShop - staffIn + om.shop, 1],     // customers
       ['<b>in the car park</b>', outside, 1],
+      ['<b>in town</b>', om.town, 1],
+      ['staff at work', om.work + staffIn, 0],
       ['cars parked', taken + ' of ' + BAYS.length, 0],
-      ['cars moving', CARS.length, 0],
-      ['gulls and foxes', birds, 0]
+      ['cars moving', CARS.length, 0]
     ];
+    if (cc) rows2.push(['whose they are', cc.ownerShop + ' shopping · ' + cc.ownerWork +
+                        ' staff · ' + cc.ownerTown + ' in town · ' +
+                        (cc.ownerCarPark + cc.ownerInCar) + ' nearby', 0]);
+    if (abandoned) rows2.push(['abandoned', abandoned + (ticketed ? ', ' + ticketed + ' ticketed' : ''), 0]);
+    else if (ticketed) rows2.push(['ticketed', ticketed, 0]);
+    if (CENSUS.ev.tickets || CENSUS.ev.towed)
+      rows2.push(['tickets written · towed', (CENSUS.ev.tickets || 0) + ' · ' + (CENSUS.ev.towed || 0), 0]);
+    if (TOW.truck) rows2.push(['the recovery truck', TOW.truck.tow && TOW.truck.tow.loaded ? 'leaving, loaded' : 'on its way in', 0]);
+    /* The one that should always say nothing: a car nobody is behind and the
+       census has not yet put down as abandoned. Shown in red if it ever isn't. */
+    if (unaccounted || (cs && cs.people.carless))
+      rows2.push(['<span class="bad">unaccounted</span>', '<span class="bad">' + unaccounted +
+                  ' cars · ' + (cs ? cs.people.carless : 0) + ' people</span>', 0]);
+    rows2.push(['gulls and foxes', birds, 0]);
     if (lost) rows2.push(['looking for their car', lost, 0]);
     if (EXC_HOT.length){
       const top = EXC_HOT[0];
