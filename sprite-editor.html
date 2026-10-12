@@ -106,6 +106,20 @@ input[type=color]{width:26px;height:20px;padding:0;border:1px solid #262c32;back
       <div class="err" id="scErr" style="padding:4px 0 0" hidden></div>
     </div>
     <div class="sec">
+      <h4>size, anchors &amp; parts</h4>
+      <div class="fld"><label style="cursor:default">size</label>
+        <input type="number" id="dzL" step="0.01" min="0" placeholder="L" style="width:54px">
+        <input type="number" id="dzW" step="0.01" min="0" placeholder="W" style="width:54px">
+        <input type="number" id="dzH" step="0.01" min="0" placeholder="H" style="width:54px"></div>
+      <div class="tabs"><button id="dzFit">from boxes</button><button id="dzClr">clear</button></div>
+      <div id="anList" style="margin-top:6px"></div>
+      <div class="tabs"><button id="anAdd">add anchor</button></div>
+      <div id="ptList" style="margin-top:6px"></div>
+      <div class="hint">anchors are points the game hangs things on: tickets on a roof,
+        a towed car on a bed, the bus door. A part is a group of boxes that pivots
+        about its point; give a box a part name on the right.</div>
+    </div>
+    <div class="sec">
       <h4>states</h4>
       <div class="tabs" id="stTabs"></div>
       <div class="tabs" style="margin-top:6px">
@@ -130,10 +144,11 @@ input[type=color]{width:26px;height:20px;padding:0;border:1px solid #262c32;back
 
   <div id="mid">
     <div id="bar">
-      <button id="imp">import</button>
+      <button id="imp" title="open a sprite file: sprites/vehicles.sprite.js or sprites/living.sprite.js">open</button>
+      <button id="save" title="save back to the file you opened">save</button>
       <button id="mrg">merge</button>
-      <input type="file" id="file" accept=".txt,.sprite,.text" hidden>
-      <button id="exp">export</button>
+      <input type="file" id="file" accept=".js,.txt,.sprite,.text" hidden>
+      <button id="exp" title="download a copy">save as</button>
       <button id="showTxt">text</button>
       <span style="width:8px"></span>
       <button id="spinB" class="on">spin</button>
@@ -183,6 +198,10 @@ input[type=color]{width:26px;height:20px;padding:0;border:1px solid #262c32;back
       <div class="fld"><label for="bd" style="cursor:default">density</label>
         <input type="number" id="bd" step="0.1" min="0.01">
         <span style="color:#5c666e;font-size:11px">rel.</span></div>
+      <div class="fld"><label id="litLab">lit</label>
+        <input type="number" id="lit" step="0.1" min="0" max="1" title="self-lit: 0 off, 1 full (lamps, beacons)">
+        <label for="bpart" style="width:auto;cursor:default">part</label>
+        <input type="text" id="bpart" style="width:72px" title="moving part this box belongs to"></div>
       <div class="fld"><label id="roofLab">roof</label>
         <input type="number" id="roof" step="0.02" min="0" max="1">
         <label id="meshLab">mesh</label><input type="number" id="mesh" step="0.005" min="0"></div>
@@ -192,6 +211,18 @@ input[type=color]{width:26px;height:20px;padding:0;border:1px solid #262c32;back
       <div class="fld" style="margin:0">
         <input type="color" id="col"><input type="number" id="alp" min="0" max="100" step="1">
         <span style="color:#5c666e">% alpha</span>
+      </div>
+      <div class="fld" style="margin:6px 0 0">
+        <label for="tone" style="cursor:default">named</label>
+        <select id="tone"><option value="">fixed colour</option><option>paint</option>
+          <option>skin</option><option>hair</option></select>
+        <input type="number" id="toneK" step="0.05" min="0.1" max="1"
+          title="shade: 1 as chosen, 0.75 darker">
+      </div>
+      <div class="fld" style="margin:4px 0 6px">
+        <label style="cursor:default" title="what paint, skin and hair look like here; each car and person gets their own in the game">previews</label>
+        <input type="color" id="tvPaint" title="paint"><input type="color" id="tvSkin" title="skin">
+        <input type="color" id="tvHair" title="hair">
       </div>
       <div class="pal" id="pal"></div>
     </div>
@@ -205,12 +236,15 @@ input[type=color]{width:26px;height:20px;padding:0;border:1px solid #262c32;back
 </div>
 
 <script>
-const HEADER = `# tesco-trueno sprite format v1
+const HEADER = `# tesco-trueno sprite format v2
 #
 # axes   f = along facing (+ forward), l = lateral (+ left), z = up. metres.
 # box    box <f> <l> <z>  <L> <W> <H>  <colour>  [flags]
 #          f,l are the box centre; z is its BASE. L is along f, W along l, H up.
-# colour #rrggbb | #rrggbbaa | none
+# colour #rrggbb | #rrggbbaa | none | paint | skin | hair   (each may take :<k>)
+#          paint: the owner's colour - a car's paint, an umbrella's canopy
+#          skin, hair: the person's own, chosen once per resident and kept
+#          :<k> darkens it, e.g. paint:0.75 for sills, hair:0.8 for shading
 # flags  n=<label>          a name, for the editor list
 #        mir=1              also draw the mirror image at -l (swaps lft/rgt)
 #        rot=<radians>      extra yaw, added to the sprite heading
@@ -218,10 +252,18 @@ const HEADER = `# tesco-trueno sprite format v1
 #        roof=<frac>        inset glass panel on the top face, this fraction of L
 #        glass=<colour>     colour of that inset panel
 #        mesh=<spacing>     stroke wire mesh at this spacing instead of filling
-#        d=<density>        relative density, default 1. mass is distributed by d*volume
-# mass   mass <kg> after a sprite line sets that sprite's real total mass.
-#        per-box mass, centre of mass and yaw inertia are DERIVED, never stored,
-#        so they survive scaling and resizing.
+#        lit=<0..1>         self-lit: holds its colour at night (lamps, beacons)
+#
+# v2, per sprite (before its first state):
+#   size <L> <W> <H>              footprint and height, for collision and z
+#   anchor <name> <f> <l> <z>     a named point the game hangs things on:
+#                                 tickets, a carried car, a hitch, a door
+# v2, inside a state:
+#   part <name> <f> <l> <z>       boxes after this belong to a moving part that
+#                                 pivots about (f,l,z); the game turns it about
+#                                 the vertical (yaw) or raises it (lift). Boxes
+#                                 are always drawn level, so parts cannot tilt.
+#   endpart                       back to the body
 #
 # A '#' starts a comment only at the beginning of a line, because colours also
 # begin with '#'. For a comment on the end of a box line, use ';' instead.
@@ -229,7 +271,6 @@ const HEADER = `# tesco-trueno sprite format v1
 # Faces are named in the box's own frame, so they stay right through rotation.
 # Any box with mesh, a none face or an alpha face renders all six faces sorted
 # back to front; fully opaque boxes cull their rear faces.
-
 `;
 
 const FACES = ['top','bot','fwd','aft','lft','rgt'];
@@ -237,14 +278,28 @@ const DEFAULT_PAL = ['#e9eae5','#c7c8c3','#b9bcbe','#8e9398','#7d8489','#5b6169'
   '#3c4148','#23272c','#15171a','#0d0e10','#101214','#c2a08a','#cbcec9','#3a3735',
   '#6f5f5c','#a89a86','#8d6b70','#5c7a74','#46352f','#4a5a52','#35618c','#7a4043',
   '#c0392b','#cfe03c','#e2a84a','#d08a4a','#aab3b7','#798287','#dfe2df','#9aa3a8'];
-const FLAGKEYS = ['n','mir','rot','roof','glass','mesh','d'].concat(FACES);
+const FLAGKEYS = ['n','mir','rot','roof','glass','mesh','d','lit'].concat(FACES);
 
 function isNone(c){ return c === 'none'; }
 function hasAlpha(c){ return typeof c === 'string' && c.length === 9 &&
   c.slice(7,9).toLowerCase() !== 'ff'; }
-function validCol(c){ return c === 'none' || /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c); }
+function validCol(c){ return c === 'none' || /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c) ||
+  /^(paint|skin|hair)(:[0-9.]+)?$/.test(c); }
+/* Named colours (v2): what they look like HERE. In the game each car and each
+   person has their own; these are only for seeing the sprite while editing. */
+const TONES = { paint:'#8e9398', skin:'#c2a08a', hair:'#3a3735' };
+function toneOf(c){ if (typeof c !== 'string') return null;
+  const n = c.split(':')[0]; return TONES[n] ? n : null; }
+function toneK(c){ const i = c.indexOf(':'); return i > 0 ? (parseFloat(c.slice(i + 1)) || 1) : 1; }
+function resolveCol(c){
+  const t = toneOf(c); if (!t) return c;
+  const k = toneK(c), n = parseInt(TONES[t].slice(1), 16);
+  const h = function(v){ return ('0' + Math.max(0, Math.min(255, Math.round(v * k))).toString(16)).slice(-2); };
+  return '#' + h(n >> 16 & 255) + h(n >> 8 & 255) + h(n & 255);
+}
 function shade(col, f){
   if (!col || isNone(col)) return null;
+  col = resolveCol(col);
   const h = col.slice(1), n = parseInt(h.slice(0,6), 16);
   const a = h.length >= 8 ? parseInt(h.slice(6,8), 16) / 255 : 1;
   const r = Math.min(255, (n >> 16) * f | 0), g = Math.min(255, ((n >> 8) & 255) * f | 0),
@@ -255,7 +310,7 @@ function shade(col, f){
 
 function parse(txt){
   const doc = { sprites: [] }, errs = [];
-  let sp = null, st = null, ln = 0;
+  let sp = null, st = null, ln = 0, part = '';
   for (const raw of txt.split(/\r?\n/)){
     ln++;
     let line = raw.trim();
@@ -266,11 +321,33 @@ function parse(txt){
     const t = line.split(/\s+/), k = t[0].toLowerCase();
     if (k === 'sprite'){
       if (!t[1]) { errs.push(ln + ': sprite needs a name'); continue; }
-      sp = { name: t[1], mass: 0, states: [] }; doc.sprites.push(sp); st = null;
+      sp = { name: t[1], mass: 0, states: [], size: null, anchors: [], parts: {} };
+      doc.sprites.push(sp); st = null; part = '';
     } else if (k === 'state'){
-      if (!sp){ sp = { name: 'sprite', mass: 0, states: [] }; doc.sprites.push(sp); }
+      if (!sp){ sp = { name: 'sprite', mass: 0, states: [], size: null, anchors: [], parts: {} };
+                doc.sprites.push(sp); }
       if (!t[1]) { errs.push(ln + ': state needs a name'); continue; }
-      st = { name: t[1], boxes: [] }; sp.states.push(st);
+      st = { name: t[1], boxes: [] }; sp.states.push(st); part = '';
+    } else if (k === 'size'){
+      if (!sp){ errs.push(ln + ': size outside any sprite'); continue; }
+      const v = t.slice(1, 4).map(Number);
+      if (v.length < 3 || v.some(function(x){ return !isFinite(x) || x < 0; })){
+        errs.push(ln + ': size needs L W H'); continue; }
+      sp.size = { L:v[0], W:v[1], H:v[2] };
+    } else if (k === 'anchor'){
+      if (!sp){ errs.push(ln + ': anchor outside any sprite'); continue; }
+      const v = t.slice(2, 5).map(Number);
+      if (!t[1] || v.length < 3 || v.some(function(x){ return !isFinite(x); })){
+        errs.push(ln + ': anchor needs a name and f l z'); continue; }
+      sp.anchors.push({ n:t[1], f:v[0], l:v[1], z:v[2] });
+    } else if (k === 'part'){
+      if (!sp || !t[1]){ errs.push(ln + ': part needs a name'); continue; }
+      const v = t.slice(2, 5).map(Number);
+      sp.parts[t[1]] = { f:isFinite(v[0]) ? v[0] : 0, l:isFinite(v[1]) ? v[1] : 0,
+                         z:isFinite(v[2]) ? v[2] : 0 };
+      part = t[1];
+    } else if (k === 'endpart'){
+      part = '';
     } else if (k === 'mass'){
       if (!sp){ errs.push(ln + ': mass outside any sprite'); continue; }
       const m = Number(t[1]);
@@ -284,7 +361,7 @@ function parse(txt){
         errs.push(ln + ': box has a non-numeric field'); continue; }
       if (!validCol(t[7])){ errs.push(ln + ': bad colour "' + t[7] + '"'); continue; }
       const b = { f:v[0], l:v[1], z:v[2], L:Math.abs(v[3]), W:Math.abs(v[4]), H:Math.abs(v[5]),
-                  col:t[7], n:'', mir:0, rot:0, roof:0, glass:'', mesh:0, d:1 };
+                  col:t[7], n:'', mir:0, rot:0, roof:0, glass:'', mesh:0, d:1, lit:0, part:part };
       for (const fc of FACES) b[fc] = '';
       let bad = false;
       for (let i = 8; i < t.length; i++){
@@ -299,6 +376,12 @@ function parse(txt){
           if (!isFinite(x) || x <= 0){
             errs.push(ln + ': d must be a positive number'); bad = true; break; }
           b.d = x;
+        }
+        else if (key === 'lit'){
+          const x = val === '' ? 1 : Number(val);
+          if (!isFinite(x) || x < 0 || x > 1){
+            errs.push(ln + ': lit must be 0 to 1'); bad = true; break; }
+          b.lit = x;
         }
         else if (key === 'rot' || key === 'roof' || key === 'mesh'){
           const x = Number(val);
@@ -324,23 +407,38 @@ function num(x){
 }
 function serialise(doc){
   let o = HEAD;
+  const boxLine = function(b){
+    let s = '  box ' + num(b.f) + ' ' + num(b.l) + ' ' + num(b.z) + '  ' +
+            num(b.L) + ' ' + num(b.W) + ' ' + num(b.H) + '  ' + b.col;
+    if (b.mesh) s += ' mesh=' + b.mesh;
+    if ((b.d || 1) !== 1) s += ' d=' + b.d;
+    if (b.roof) s += ' roof=' + b.roof;
+    if (b.glass) s += ' glass=' + b.glass;
+    for (const fc of FACES) if (b[fc]) s += ' ' + fc + '=' + b[fc];
+    if (b.mir) s += ' mir=1';
+    if (b.rot) s += ' rot=' + b.rot;
+    if (b.lit) s += ' lit=' + b.lit;
+    if (b.n) s += ' n=' + b.n;
+    return s + '\n';
+  };
   for (const sp of doc.sprites){
     o += '\nsprite ' + sp.name + '\n';
     if (sp.mass > 0) o += 'mass ' + sp.mass + '\n';
+    if (sp.size) o += 'size ' + num(sp.size.L).trim() + ' ' + num(sp.size.W).trim() + ' ' +
+                      num(sp.size.H).trim() + '\n';
+    for (const a of (sp.anchors || []))
+      o += 'anchor ' + a.n + ' ' + num(a.f).trim() + ' ' + num(a.l).trim() + ' ' + num(a.z).trim() + '\n';
     for (const st of sp.states){
       o += 'state ' + st.name + '\n';
-      for (const b of st.boxes){
-        let s = '  box ' + num(b.f) + ' ' + num(b.l) + ' ' + num(b.z) + '  ' +
-                num(b.L) + ' ' + num(b.W) + ' ' + num(b.H) + '  ' + b.col;
-        if (b.mesh) s += ' mesh=' + b.mesh;
-        if ((b.d || 1) !== 1) s += ' d=' + b.d;
-        if (b.roof) s += ' roof=' + b.roof;
-        if (b.glass) s += ' glass=' + b.glass;
-        for (const fc of FACES) if (b[fc]) s += ' ' + fc + '=' + b[fc];
-        if (b.mir) s += ' mir=1';
-        if (b.rot) s += ' rot=' + b.rot;
-        if (b.n) s += ' n=' + b.n;
-        o += s + '\n';
+      /* The body first, then each moving part as a block with its pivot. */
+      for (const b of st.boxes) if (!b.part) o += boxLine(b);
+      const names = [];
+      for (const b of st.boxes) if (b.part && names.indexOf(b.part) < 0) names.push(b.part);
+      for (const pn of names){
+        const pv = (sp.parts && sp.parts[pn]) || { f:0, l:0, z:0 };
+        o += 'part ' + pn + ' ' + num(pv.f).trim() + ' ' + num(pv.l).trim() + ' ' + num(pv.z).trim() + '\n';
+        for (const b of st.boxes) if (b.part === pn) o += boxLine(b);
+        o += 'endpart\n';
       }
     }
   }
@@ -551,7 +649,10 @@ function drawPart(p, capture){
     const col = faceCol(b, s.fc);
     if (isNone(col)) return;
     const q = quadOf(s.a, s.c, p.z0, p.z1);
-    const f = s.near ? (s.lit ? 0.46 : 0.62) : (s.lit ? 0.24 : 0.30);
+    /* `s.lit` is which way the side faces the light; `b.lit` is the box's own
+       glow (lamps), which lifts every side toward full brightness. */
+    const f0 = s.near ? (s.lit ? 0.46 : 0.62) : (s.lit ? 0.24 : 0.30);
+    const f = b.lit ? f0 + (1 - f0) * b.lit : f0;
     if (b.mesh){
       wires(q, Math.max(2, Math.min(18, Math.round((p.z1 - p.z0) / b.mesh))),
                Math.max(2, Math.min(24, Math.round(s.len / b.mesh))),
@@ -721,6 +822,7 @@ function render(){
     else if (showClash && INTER.has(p.i)) outline(p, 'rgba(77,127,150,0.7)', 1.3);
     if (p.i === bxI){ outline(p); if (faceSel) highlightFace(p, faceSel); }
   }
+  if (sp) drawMarks(sp);
   const b = cur();
   let yaw = (camA * 180 / Math.PI) % 360; if (yaw < 0) yaw += 360;
   document.getElementById('hud').textContent =
@@ -730,9 +832,40 @@ function render(){
     (faceSel ? '  ·  face ' + faceSel : '') +
     (axisLock ? '  ·  ' + axisLock + ' axis' : '');
   if (emptyDoc()) document.getElementById('hud').textContent =
-    'empty — import or merge a .sprite.txt file, or add a box';
+    'empty — open sprites/vehicles.sprite.js or sprites/living.sprite.js, or add a box';
 }
 
+/* The declared size as a dashed footprint on the ground, anchors as magenta
+   crosses with their names, part pivots as cyan rings. */
+function drawMarks(sp){
+  const ca = Math.cos(camA), sa = Math.sin(camA);
+  const at = function(f, l, z){ const x = f * ca - l * sa, y = f * sa + l * ca;
+    return [SX(x, y), SY(x, y, z)]; };
+  g2.save();
+  g2.font = '10px ui-monospace, Menlo, Consolas, monospace';
+  if (sp.size){
+    const L = sp.size.L / 2, W = sp.size.W / 2;
+    const q = [at(L, W, 0), at(L, -W, 0), at(-L, -W, 0), at(-L, W, 0)];
+    g2.setLineDash([4, 4]); g2.strokeStyle = 'rgba(143,195,216,0.7)'; g2.lineWidth = 1;
+    g2.beginPath(); g2.moveTo(q[0][0], q[0][1]);
+    for (let i = 1; i < 4; i++) g2.lineTo(q[i][0], q[i][1]);
+    g2.closePath(); g2.stroke(); g2.setLineDash([]);
+  }
+  for (const a of (sp.anchors || [])){
+    const p = at(a.f, a.l, a.z);
+    g2.strokeStyle = '#e05ad0'; g2.lineWidth = 1.5;
+    g2.beginPath(); g2.moveTo(p[0] - 5, p[1]); g2.lineTo(p[0] + 5, p[1]);
+    g2.moveTo(p[0], p[1] - 5); g2.lineTo(p[0], p[1] + 5); g2.stroke();
+    g2.fillStyle = '#e05ad0'; g2.fillText(a.n, p[0] + 7, p[1] - 4);
+  }
+  for (const pn in (sp.parts || {})){
+    const v = sp.parts[pn], p = at(v.f, v.l, v.z);
+    g2.strokeStyle = '#5ad0e0'; g2.lineWidth = 1.5;
+    g2.beginPath(); g2.arc(p[0], p[1], 5, 0, 6.2832); g2.stroke();
+    g2.fillStyle = '#5ad0e0'; g2.fillText(pn, p[0] + 7, p[1] + 10);
+  }
+  g2.restore();
+}
 function inPoly(q, x, y){
   let inside = false;
   for (let i = 0, j = q.length - 1; i < q.length; j = i++){
@@ -928,7 +1061,7 @@ function buildPal(){
   w.innerHTML = '';
   seen.slice(0, 60).forEach(function(c){
     const d = document.createElement('div'); d.className = 'sw';
-    d.style.background = c; d.title = c;
+    d.style.background = resolveCol(c); d.title = c;
     d.onclick = function(){ const b = cur(); if (!b) return;
       snap(); b.col = c; rebuild(); };
     w.appendChild(d);
@@ -948,7 +1081,7 @@ function buildFaces(){
     const v = b[fc];
     sel.value = !v ? 'inherit' : isNone(v) ? 'none' : 'colour';
     const ci = document.createElement('input'); ci.type = 'color';
-    ci.value = (v && !isNone(v)) ? v.slice(0,7) : b.col.slice(0,7);
+    ci.value = (v && !isNone(v)) ? resolveCol(v).slice(0,7) : resolveCol(b.col).slice(0,7);
     const ai = document.createElement('input'); ai.type = 'number';
     ai.min = 0; ai.max = 100; ai.step = 1;
     ai.value = (v && !isNone(v) && v.length === 9)
@@ -974,21 +1107,66 @@ function buildFaces(){
 }
 function buildProps(){
   const b = cur(), on = !!b;
-  for (const id of ['bn','pf','pl','pz','sL','sW','sH','rot','roof','mesh','col','alp','mir','bd'])
+  for (const id of ['bn','pf','pl','pz','sL','sW','sH','rot','roof','mesh','col','alp','mir','bd',
+                    'lit','bpart','tone','toneK'])
     $(id).disabled = !on;
   if (!on) return;
+  $('lit').value = b.lit || 0; $('bpart').value = b.part || '';
+  const tn = toneOf(b.col);
+  $('tone').value = tn || ''; $('toneK').value = tn ? toneK(b.col) : 1; $('toneK').disabled = !tn;
   $('bn').value = b.n; $('pf').value = b.f; $('pl').value = b.l; $('pz').value = b.z;
   $('sL').value = b.L; $('sW').value = b.W; $('sH').value = b.H;
   $('rot').value = b.rot; $('roof').value = b.roof; $('mesh').value = b.mesh;
   $('mir').checked = !!b.mir;
   $('bd').value = b.d || 1;
-  $('col').value = isNone(b.col) ? '#000000' : b.col.slice(0,7);
+  $('col').value = isNone(b.col) ? '#000000' : resolveCol(b.col).slice(0,7);
   $('alp').value = b.col.length === 9 ? Math.round(parseInt(b.col.slice(7,9),16)/255*100) : 100;
+}
+/* Size, anchors and parts for the current sprite. */
+function buildMarks(){
+  const sp = sprite(); if (!sp) return;
+  if (!sp.anchors) sp.anchors = [];
+  if (!sp.parts) sp.parts = {};
+  $('dzL').value = sp.size ? sp.size.L : ''; $('dzW').value = sp.size ? sp.size.W : '';
+  $('dzH').value = sp.size ? sp.size.H : '';
+  const row = function(label, obj, onName, onDel){
+    const d = document.createElement('div'); d.className = 'fld'; d.style.margin = '2px 0';
+    const nm = document.createElement('input'); nm.type = 'text'; nm.value = label;
+    nm.style.width = '64px'; nm.onchange = function(){ snap(); onName(nm.value.replace(/\s+/g, '.')); rebuild(); };
+    d.appendChild(nm);
+    for (const k of ['f', 'l', 'z']){
+      const v = document.createElement('input'); v.type = 'number'; v.step = 0.01; v.value = obj[k];
+      v.style.width = '50px'; v.title = k;
+      v.onchange = function(){ const x = Number(v.value); if (!isFinite(x)) return;
+        snap(); obj[k] = x; rebuild(); };
+      d.appendChild(v);
+    }
+    if (onDel){ const x = document.createElement('button'); x.textContent = '×'; x.className = 'warn';
+      x.onclick = function(){ snap(); onDel(); rebuild(); }; d.appendChild(x); }
+    return d;
+  };
+  const an = $('anList'); an.innerHTML = '';
+  sp.anchors.forEach(function(a, i){
+    an.appendChild(row(a.n, a, function(n){ a.n = n || a.n; },
+                       function(){ sp.anchors.splice(i, 1); }));
+  });
+  const pt = $('ptList'); pt.innerHTML = '';
+  for (const pn of Object.keys(sp.parts)){
+    const h = document.createElement('div'); h.className = 'hint'; h.style.padding = '2px 0 0';
+    h.textContent = 'part ' + pn + ' pivot';
+    pt.appendChild(h);
+    pt.appendChild(row(pn, sp.parts[pn], function(n){
+      if (!n || n === pn) return;
+      sp.parts[n] = sp.parts[pn]; delete sp.parts[pn];
+      for (const st of sp.states) for (const b of st.boxes) if (b.part === pn) b.part = n;
+    }, null));
+  }
+  $('tvPaint').value = TONES.paint; $('tvSkin').value = TONES.skin; $('tvHair').value = TONES.hair;
 }
 function rebuild(){
   CLASH = computeClash(boxes());
   INTER = computeInter(boxes());
-  buildSprites(); buildStates(); buildList(); buildProps(); buildFaces(); buildPal();
+  buildSprites(); buildStates(); buildList(); buildProps(); buildFaces(); buildPal(); buildMarks();
   buildScale(); buildMass();
   let bad = 0; CLASH.forEach(function(v){ if (v.ratio > BURY_BAD) bad++; });
   $('stat').textContent = DOC.sprites.length + ' sprites' +
@@ -1045,6 +1223,9 @@ $('mir').onchange = function(){ const b = cur(); if (!b) return;
   snap(); b.mir = $('mir').checked ? 1 : 0; rebuild(); };
 function writeBase(){
   const b = cur(); if (!b) return;
+  /* On a named colour the picker changes its PREVIEW, for every box using it. */
+  const tn = toneOf(b.col);
+  if (tn){ TONES[tn] = $('col').value; rebuild(); return; }
   const a = Math.max(0, Math.min(100, Number($('alp').value) || 0));
   snap();
   b.col = $('col').value + (a >= 100 ? '' :
@@ -1052,13 +1233,46 @@ function writeBase(){
   rebuild();
 }
 $('col').oninput = writeBase; $('alp').onchange = writeBase;
+bindNum('lit', function(b){ return b.lit || 0; },
+  function(b,v){ b.lit = Math.max(0, Math.min(1, Math.round(v * 100) / 100)); });
+$('bpart').onchange = function(){ const b = cur(), sp = sprite(); if (!b) return;
+  snap(); const n = $('bpart').value.trim().replace(/\s+/g, '.');
+  b.part = n;
+  if (n){ if (!sp.parts) sp.parts = {};
+          if (!sp.parts[n]) sp.parts[n] = { f:r3(b.f), l:r3(b.l), z:r3(b.z) }; }
+  rebuild(); };
+const writeTone = function(){ const b = cur(); if (!b) return;
+  snap(); const tn = $('tone').value;
+  if (!tn){ b.col = resolveCol(b.col).slice(0, 7); rebuild(); return; }
+  const k = Math.max(0.1, Math.min(1, Number($('toneK').value) || 1));
+  b.col = tn + (k < 1 ? ':' + Math.round(k * 100) / 100 : ''); rebuild(); };
+$('tone').onchange = writeTone; $('toneK').onchange = writeTone;
+$('tvPaint').oninput = function(){ TONES.paint = this.value; render(); buildPal(); };
+$('tvSkin').oninput = function(){ TONES.skin = this.value; render(); buildPal(); };
+$('tvHair').oninput = function(){ TONES.hair = this.value; render(); buildPal(); };
+const setSize = function(){ const sp = sprite(); if (!sp) return;
+  const v = ['dzL','dzW','dzH'].map(function(id){ return Number($(id).value); });
+  if (v.some(function(x){ return !isFinite(x) || x <= 0; })) return;
+  snap(); sp.size = { L:v[0], W:v[1], H:v[2] }; rebuild(); };
+$('dzL').onchange = setSize; $('dzW').onchange = setSize; $('dzH').onchange = setSize;
+$('dzFit').onclick = function(){ const sp = sprite(); if (!sp) return;
+  const bb = spriteBounds(sp); if (!bb) return;
+  /* spriteBounds gives extents and the lowest z; the height is the top. */
+  snap(); sp.size = { L:r3(bb.L), W:r3(bb.W), H:r3(bb.z0 + bb.H) }; rebuild(); };
+$('dzClr').onclick = function(){ const sp = sprite(); if (!sp) return; snap(); sp.size = null; rebuild(); };
+$('anAdd').onclick = function(){ const sp = sprite(); if (!sp) return;
+  const n = ask('anchor name (ticket, bed, door, hitch...)', 'anchor'); if (!n) return;
+  const b = cur();
+  snap(); if (!sp.anchors) sp.anchors = [];
+  sp.anchors.push({ n:n.replace(/\s+/g, '.'), f:b ? r3(b.f) : 0, l:0,
+                    z:b ? r3(b.z + b.H) : 0 }); rebuild(); };
 
 $('bxAdd').onclick = function(){
   const st = state(); if (!st) return;
   snap();
   const b = { f:0, l:0, z:0, L:0.3, W:0.3, H:0.3,
               col:(cur() ? cur().col : '#8e9398'), n:'', mir:0, rot:0, roof:0, glass:'',
-              mesh:0, d:1 };
+              mesh:0, d:1, lit:0, part:'' };
   for (const fc of FACES) b[fc] = '';
   st.boxes.push(b); bxI = st.boxes.length - 1; rebuild();
 };
@@ -1165,7 +1379,33 @@ $('noclashB').onclick = function(){ noClash = !noClash;
   this.classList.toggle('on', noClash); };
 
 let fileMode = 'replace';
-$('imp').onclick = function(){ fileMode = 'replace'; $('file').click(); };
+$('imp').onclick = async function(){
+  /* Where the browser allows it (Chrome, Edge), open with a handle so SAVE can
+     write straight back to sprites/vehicles.sprite.js; elsewhere, a plain
+     file picker and SAVE downloads. */
+  if (window.showOpenFilePicker){
+    try {
+      const hs = await window.showOpenFilePicker({ types:[{ description:'sprite files',
+        accept:{ 'text/plain':['.js', '.txt', '.sprite'] } }] });
+      const f = await hs[0].getFile();
+      load(await f.text(), f.name, hs[0]);
+      $('stat').textContent = 'opened ' + f.name;
+    } catch (e) { if (e && e.name !== 'AbortError') alert('could not open: ' + e.message); }
+    return;
+  }
+  fileMode = 'replace'; $('file').click();
+};
+$('save').onclick = async function(){
+  if (FILE.handle){
+    try {
+      const w = await FILE.handle.createWritable();
+      await w.write(fileText()); await w.close();
+      $('stat').textContent = 'saved ' + FILE.name;
+      return;
+    } catch (e) { alert('could not save: ' + e.message); }
+  }
+  $('exp').onclick();
+};
 $('mrg').onclick = function(){ fileMode = 'merge'; $('file').click(); };
 $('file').onchange = function(){
   const f = this.files && this.files[0]; if (!f) return;
@@ -1173,7 +1413,7 @@ $('file').onchange = function(){
   const r = new FileReader();
   r.onload = function(){
     if (mode === 'merge') doMerge(String(r.result), f.name);
-    else load(String(r.result), f.name);
+    else load(String(r.result), f.name, null);
   };
   r.readAsText(f); this.value = '';
 };
@@ -1319,7 +1559,7 @@ function emptyDoc(){
          DOC.sprites[0].states[0].boxes.length === 0;
 }
 function doMerge(txt, who){
-  const res = parse(txt);
+  const res = parse(unwrap(txt).body);
   if (!res.doc.sprites.length){
     alert('nothing to merge from ' + (who || 'the text') + '\n\n' +
       res.errs.slice(0, 8).join('\n'));
@@ -1339,7 +1579,25 @@ function doMerge(txt, who){
   $('stat').textContent = msg;
   return true;
 }
-function load(txt, who){
+/* The game's sprite files are sprite text wrapped in one line of JavaScript so
+   the page can load them from disk. Unwrap to edit; the wrapper is kept and
+   put back on save. */
+function unwrap(txt){
+  const k = txt.indexOf('String.raw`');
+  const j = txt.lastIndexOf('`);');
+  if (k < 0 || j < k) return { body:txt, pre:null, post:null };
+  const a = k + 'String.raw`'.length;
+  return { body:txt.slice(a, j), pre:txt.slice(0, a), post:txt.slice(j) };
+}
+let FILE = { name:null, handle:null, pre:null, post:null };
+function fileText(){
+  const t = serialise(DOC);
+  return FILE.pre !== null ? FILE.pre + '\n' + t + FILE.post : t;
+}
+function load(txt, who, handle){
+  const u = unwrap(txt);
+  FILE = { name:who || null, handle:handle || null, pre:u.pre, post:u.post };
+  txt = u.body;
   const res = parse(txt);
   if (!res.doc.sprites.length){
     alert('nothing loaded from ' + (who || 'text') + '\n\n' + res.errs.slice(0,8).join('\n'));
@@ -1352,9 +1610,9 @@ function load(txt, who){
   return true;
 }
 $('exp').onclick = function(){
-  const blob = new Blob([serialise(DOC)], { type:'text/plain' });
+  const blob = new Blob([fileText()], { type:'text/plain' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = 'cast.sprite.txt';
+  a.href = URL.createObjectURL(blob); a.download = FILE.name || 'sprites.sprite.js';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
 };
@@ -1523,7 +1781,8 @@ function loop(t){
   requestAnimationFrame(loop);
 }
 
-DOC = { sprites: [ { name:'untitled', mass:0, states: [ { name:'idle', boxes: [] } ] } ] };
+DOC = { sprites: [ { name:'untitled', mass:0, states: [ { name:'idle', boxes: [] } ],
+                    size:null, anchors:[], parts:{} } ] };
 window.addEventListener('resize', resize);
 rebuild(); resize(); requestAnimationFrame(loop);
 </script>
