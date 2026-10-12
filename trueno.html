@@ -44,15 +44,6 @@ button.on{border-color:#4d7f96;color:#8fc3d8}
   background:rgba(9,11,13,.94);border:1px solid #23282d;border-radius:2px;
   padding:9px 11px;z-index:6;font-size:11px;display:none}
 #tests.on{display:block}
-#plan{position:fixed;right:10px;bottom:10px;width:300px;background:rgba(9,11,13,.9);
-  border:1px solid #23282d;border-radius:2px;padding:9px 11px;z-index:5;font-size:11.5px}
-#plan h4{margin:0 0 6px;font-size:10.5px;font-weight:400;color:#6c7780;
-  letter-spacing:.06em;text-transform:uppercase}
-#plan div{display:flex;gap:7px;padding:1px 0;line-height:1.45}
-#plan i{font-style:normal;width:11px;flex:0 0 11px}
-.done i{color:#8fbf7a}
-.next i{color:#e2a84a}
-.todo{color:#5c666e}
 #tel{max-height:none}
 #tests h4{margin:0 0 6px;font-size:10.5px;font-weight:400;color:#6c7780;
   letter-spacing:.06em;text-transform:uppercase}
@@ -442,24 +433,6 @@ state alert
 <div id="cen"><h4>who is here &mdash; the census</h4><table id="cenT"></table></div>
 <div id="tel"><h4>what he is doing</h4><table id="telT"></table></div>
 <div id="tests"><h4>verification &mdash; handover &sect;10</h4><table id="testT"></table></div>
-<div id="plan"><h4>where we are</h4>
-  <div class="done"><i>&check;</i><span>the car park, measured and drawn</span></div>
-  <div class="done"><i>&check;</i><span>physics: grip, slides, weight transfer</span></div>
-  <div class="done"><i>&check;</i><span>bumping into things properly</span></div>
-  <div class="done"><i>&check;</i><span>he drives himself, avoids obstacles</span></div>
-  <div class="done"><i>&check;</i><span>handbrake turns, J-turns, escapes</span></div>
-  <div class="done"><i>&check;</i><span>trolleys: shunted, tipped, sent flying</span></div>
-  <div class="done"><i>&check;</i><span>god mode: pick anything up, drop it anywhere</span></div>
-  <div class="done"><i>&check;</i><span>he can see thin things now &mdash; half the damage</span></div>
-  <div class="done"><i>&check;</i><span>he knows where he is going</span></div>
-  <div class="done"><i>&check;</i><span>gulls, a fox, grannies, shoppers, Trolleyboy, the Manager</span></div>
-  <div class="done"><i>&check;</i><span>he never, ever hits anybody</span></div>
-  <div class="done"><i>&check;</i><span>sulk mode &mdash; too busy, he parks up and huffs</span></div>
-  <div class="done"><i>&check;</i><span>a day that turns; they arrive and leave by the entrance</span></div>
-  <div class="next"><i>&rarr;</i><span>next: cars that drive in and park, then weather</span></div>
-
-  <div class="todo"><i>&middot;</i><span>then: they all learn and evolve</span></div>
-</div>
 
 <script>
 /* ===========================================================================
@@ -11411,7 +11384,9 @@ $('bFast').onclick = function(){
    They start hidden now, and the census goes in the same group - it is an
    overlay like the others, and the point of the button is that one press gives
    you a clean car park to watch. */
-const OVERLAYS = ['tel', 'plan', 'cen'];
+/* The progress checklist that used to be in this group is gone (Thomas,
+   2026-10-12: "i can ask you, i don't need it on the page itself"). */
+const OVERLAYS = ['tel', 'cen'];
 function showOverlays(on){
   for (const id of OVERLAYS){
     const el = $(id);
