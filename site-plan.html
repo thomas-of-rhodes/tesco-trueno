@@ -1,0 +1,658 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Riverside Drive site plan</title>
+<style>
+html,body{margin:0;height:100%;background:#0a0c0e;color:#cfd6db;overflow:hidden;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#bar{position:fixed;left:0;right:0;top:0;display:flex;gap:6px;align-items:center;
+  padding:7px 10px;background:rgba(9,11,13,.88);border-bottom:1px solid #23282d;
+  flex-wrap:wrap;z-index:5}
+button{font:inherit;color:#cfd6db;background:#12161a;border:1px solid #262c32;
+  border-radius:2px;padding:3px 9px;cursor:pointer}
+button:hover{border-color:#3a444c;background:#181d22}
+button.on{border-color:#4d7f96;color:#8fc3d8}
+#hud{position:fixed;left:10px;bottom:8px;color:#6c7780;font-size:11px;z-index:5;
+  pointer-events:none}
+#key{position:fixed;right:10px;bottom:8px;color:#6c7780;font-size:11px;z-index:5;
+  text-align:right;pointer-events:none;line-height:1.6}
+canvas{display:block;width:100%;height:100%}
+.sp{flex:1}
+</style>
+
+<div id="bar">
+  <button id="bDay" class="on">day</button>
+  <button id="bLab" class="on">labels</button>
+  <button id="bCars" class="on">cars</button>
+  <button id="bGrid">bays</button>
+  <button id="bLorry" class="on">lorry</button>
+  <button id="bZones">ui space</button>
+  <button id="bFit">fit</button>
+  <span class="sp"></span>
+  <span id="stat" style="color:#5c666e"></span>
+</div>
+<canvas id="cv"></canvas>
+<div id="hud"></div>
+<div id="key"></div>
+
+<script>
+/* Riverside Drive, Dundee. Local frame: X runs along the corridor, 0 at the entrance
+   roundabout, 300 at the store end. Y runs across it, 0 on the river side and high on
+   the railway side. Metres throughout, z up.
+
+   The view is fixed to the agreed orientation: the projection's world frame is
+   left-handed against a map, so the local frame is mirrored before rotating, which is
+   what puts the railway on your left as you walk from the entrance to the store. */
+
+/* ---------------------------------------------------------------- dimensions
+
+   Both car park dimensions are measured off Google Maps: 169.45 m along the corridor
+   from the petrol station end to the store's near corner, and 72.61 m across. The
+   rest is derived from those two, so a future correction is a one-line change.   */
+
+const PARK_L = 172;              // tarmac along the corridor   (measured 169.45 m)
+const PARK_W = 73;               // tarmac across it            (measured 72.61 m)
+const LANE_W = 10;               // service run against the railway fence
+const BAND = 15.6;               // bay row + aisle + bay row
+const BAY = 2.55;                // bay pitch along the corridor
+
+const X0 = 40;                   // tarmac starts here, past the roads and forecourt
+const X1 = X0 + PARK_L;          // store frontage
+const Y0 = 2;
+const Y1 = Y0 + PARK_W;
+const STORE_L = 120, STORE_W = 86;
+const X2 = X1 + STORE_L;         // far end of the store
+
+const WX0 = 0, WX1 = 340, WY0 = -100, WY1 = 240;   // square world, 340 m a side
+const MX = (X0 + X1) / 2, MY = Y0 + PARK_W / 2, BASE = Math.PI;
+
+/* Buildings are drawn at twice their real height and masts at 1.4, so the masts stay
+   the tallest thing on site as they are in the photograph. Heights below are real. */
+const BH = 2, MH = 1.4;
+
+const DAY = {
+  tar:[43,49,55], grass:[46,68,44], ballast:[64,58,50], road:[40,40,43],
+  water:[42,66,78], scrub:[40,62,42], waste:[74,70,58], lane:[38,44,49],
+  kerb:[58,62,60], fore:[126,128,124]
+};
+const NIGHT = {
+  tar:[22,26,30], grass:[18,28,19], ballast:[28,26,23], road:[20,20,22],
+  water:[13,20,26], scrub:[16,25,17], waste:[30,29,25], lane:[19,23,26],
+  kerb:[30,33,32], fore:[64,66,63]
+};
+
+const RAIL_Y = Y1 + 12;          // centre of the four-track formation
+const AREAS = [
+  { k:'water',   x0:WX0, x1:WX1, y0:WY0,      y1:-32 },
+  { k:'road',    x0:WX0, x1:WX1, y0:-32,      y1:-12 },
+  { k:'grass',   x0:WX0, x1:WX1, y0:-12,      y1:Y0 },
+  { k:'tar',     x0:X0,  x1:X1 + 4, y0:Y0,    y1:Y1 },
+  { k:'lane',    x0:X0,  x1:X1,   y0:Y1 - LANE_W, y1:Y1 },
+  { k:'grass',   x0:X0 + 18, x1:X0 + 46, y0:Y0 + 24, y1:Y0 + 30 },
+  { k:'grass',   x0:X0 + 74, x1:X0 + 102, y0:Y0 + 8, y1:Y0 + 14 },
+  { k:'grass',   x0:X0 + 120, x1:X0 + 148, y0:Y0 + 24, y1:Y0 + 30 },
+  { k:'grass',   x0:WX0, x1:WX1, y0:Y1,      y1:Y1 + 6 },
+  { k:'ballast', x0:WX0, x1:WX1, y0:Y1 + 6,  y1:Y1 + 24 },
+  { k:'scrub',   x0:WX0, x1:WX1, y0:Y1 + 24, y1:Y1 + 50 },
+  { k:'waste',   x0:WX0, x1:WX1, y0:Y1 + 50, y1:WY1 }
+];
+
+const NBANDS = Math.floor((PARK_W - LANE_W) / BAND);   // 73 less 10, over 15.6 = 4
+const BANDS = [];
+for (let i = 0; i < NBANDS; i++) BANDS.push(Y0 + 0.4 + i * BAND);
+const ROWY = [];
+for (const b of BANDS){ ROWY.push(b + 2.4); ROWY.push(b + 13.2); }
+
+const RAILS = [RAIL_Y - 5.2, RAIL_Y - 1.8, RAIL_Y + 1.8, RAIL_Y + 5.2];
+const MASTS = [[X0 + 16, Y0 + 24], [X0 + 58, Y0 + 24], [X0 + 100, Y0 + 24],
+               [X0 + 142, Y0 + 24], [X0 + 36, Y0 + 54], [X0 + 120, Y0 + 54],
+               [X1 - 8, Y0 + 40]];
+
+function ring(cx, cy, r, n){
+  const out = [];
+  for (let i = 0; i < n; i++){
+    const t = i / n * Math.PI * 2;
+    out.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+  }
+  return out;
+}
+/* The A85 roundabout off the south-west corner, the spine running north-east past
+   the filling station forecourt, a junction by the footbridge landing, then in and
+   out of the car park's corner. Fuel traffic never reaches the parking aisles. */
+const JX = 30, JY = Y0 + 38;
+const ROADS = [
+  { k:'road',  p:ring(14, -48, 18, 28) },
+  { k:'kerb',  p:ring(14, -48, 9.4, 22) },
+  { k:'grass', p:ring(14, -48, 7.6, 22) },
+  { k:'lane',  p:[[22, -32], [31, -30], [JX + 4, JY], [JX - 5, JY]] },
+  { k:'road',  p:ring(JX, JY, 9, 22) },
+  { k:'kerb',  p:ring(JX, JY, 3.0, 16) },
+  { k:'lane',  p:[[JX + 5, JY + 6], [JX + 3, JY - 5], [X0 + 10, Y0 + 22],
+                  [X0 + 14, Y0 + 32]] },
+  { k:'lane',  p:[[JX - 6, JY + 5], [JX - 6, JY - 5], [-14, JY - 5], [-14, JY + 5]] },
+  { k:'fore',  p:[[6, -12], [38, -12], [38, Y0 + 2], [6, Y0 + 2]] },
+  { k:'kerb',  p:[[8, Y0 + 26], [36, Y0 + 26], [36, Y0 + 29], [8, Y0 + 29]] }
+];
+
+const PROPS = [];
+function box(X, Y, L, W, z0, z1, col, rot){
+  PROPS.push({ X:X, Y:Y, L:L, W:W, z0:z0, z1:z1, col:col, rot:rot || 0 });
+}
+/* A pitch, in the house style: stepped slabs narrowing as they rise. `axis` is the
+   direction the ridge runs, so the steps pinch the other way. */
+function pitch(X, Y, L, W, z0, z1, col, axis, steps){
+  const n = steps || 3, dz = (z1 - z0) / n;
+  for (let i = 0; i < n; i++){
+    const f = 1 - i / n;
+    const l = axis === 'x' ? L : L * f;
+    const w = axis === 'x' ? W * f : W;
+    box(X, Y, l, w, z0 + i * dz, z0 + (i + 1) * dz, col);
+  }
+}
+/* A pixel octagon: a square with its corners cut. The union of a wide-short box and
+   a narrow-tall box at 0.414 of the span is a regular octagon, so no rotation. */
+function octRoof(X, Y, s, z0, z1, col, steps){
+  const n = steps || 3, dz = (z1 - z0) / n, C = 0.414;
+  for (let i = 0; i < n; i++){
+    const f = 1 - i * 0.2, a = z0 + i * dz, b = z0 + (i + 1) * dz;
+    box(X, Y, s * f, s * f * C, a, b, col);
+    box(X, Y, s * f * C, s * f, a, b, col);
+  }
+}
+function bbox(X, Y, L, W, z0, z1, col, rot){ box(X, Y, L, W, z0 * BH, z1 * BH, col, rot); }
+function bpitch(X, Y, L, W, z0, z1, col, axis, steps){
+  pitch(X, Y, L, W, z0 * BH, z1 * BH, col, axis, steps);
+}
+function boct(X, Y, s, z0, z1, col, steps){ octRoof(X, Y, s, z0 * BH, z1 * BH, col, steps); }
+
+const WALL = '#98a09d', ROOF = '#45786a', ROOF2 = '#3d6c5f', COL = '#39424a';
+const MAST = '#2a3238', MASTH = '#3b454b', KIOSK = '#8b9195', BRIDGE = '#d4d9d8';
+const CARS = ['#b6babd','#8d9398','#59697a','#7a4043','#3e5a4b','#c7c8c3','#6f5f5c',
+              '#a89a86','#9aa4a8','#4a5a52'];
+
+/* Store: an L, wider than the car park, with the lorry dock cut into the corner
+   nearest the railway. Ridges run across the corridor, as in the photograph. */
+const SMY = Y0 - 14 + 66 / 2;                       // main block centre across
+const SRY = Y0 + 50 + 20 / 2;                       // rear wing centre across
+bbox(X1 + STORE_L / 2, SMY, STORE_L, 66, 0, 5.4, WALL);
+bbox(X1 + 21 + (STORE_L - 21) / 2, SRY, STORE_L - 21, 20, 0, 5.4, WALL);
+for (let i = 0; i < 6; i++)
+  bpitch(X1 + 10 + i * 20, SMY, 20, 66, 5.4, 9.6, ROOF, 'y');
+for (let i = 0; i < 5; i++)
+  bpitch(X1 + 31 + i * 20, SRY, 20, 20, 5.4, 9.2, ROOF, 'y');
+bbox(X1 + 1, SMY, 3, 60, 0, 6.2, '#6f7a7c');        // frontage glazing band
+bbox(X1 - 0.5, SMY, 1.2, 56, 4.0, 5.6, '#c3502f');  // the red sign
+
+bbox(X1 + 18, SRY, 4, 20, 0, 1.2, '#6d7378');       // loading platform
+for (const dy of [SRY - 6, SRY, SRY + 6])
+  bbox(X1 + 20.3, dy, 0.7, 4.6, 1.2, 4.4, '#20262a');
+bbox(X1 + 20.7, Y0 + 47, 1.2, 4, 0, 6.0, '#5c6468');
+
+/* Covered walkway down the river-side edge, pavilion at its far end */
+const WY = Y0 + 6;
+for (let x = X0 + 48; x <= X1 - 4; x += 7){
+  bbox(x, WY - 4.5, 0.42, 0.42, 0, 4.2, COL);
+  bbox(x, WY + 4.5, 0.42, 0.42, 0, 4.2, COL);
+}
+bpitch((X0 + 48 + X1 - 4) / 2, WY, X1 - 4 - (X0 + 48), 11, 4.2, 5.6, ROOF, 'x');
+const PVX = X0 + 40;
+for (let a = 0; a < 8; a++){
+  const th = a * Math.PI / 4;
+  bbox(PVX + 6.6 * Math.cos(th), WY + 6.6 * Math.sin(th), 0.44, 0.44, 0, 4.4, COL);
+}
+boct(PVX, WY, 17, 4.4, 5.9, ROOF2);
+
+for (const [x, y] of [[X0 + 30, Y0 + 20], [X0 + 80, Y0 + 36], [X0 + 130, Y0 + 20],
+                      [X0 + 105, Y0 + 8]]){
+  for (const dx of [-3, 3]) for (const dy of [-1.6, 1.6])
+    bbox(x + dx, y + dy, 0.34, 0.34, 0, 2.5, COL);
+  bpitch(x, y, 8, 5, 2.5, 3.4, ROOF2, 'x', 2);
+}
+
+/* Click and Collect: a unit out in the bays, so some cars park, are served, and
+   leave without anyone entering the store at all. */
+bbox(X0 + 52, Y0 + 30, 13, 8, 0, 3.9, '#c9ccc9');
+bbox(X0 + 52, Y0 + 30, 14, 9, 3.9, 4.4, '#8e9490');
+bbox(X0 + 45.6, Y0 + 30, 0.8, 6, 0, 3.2, '#3b444a');
+
+for (const [x, y] of MASTS){
+  box(x, y, 0.55, 0.55, 0, 13.2 * MH, MAST);
+  box(x, y, 3.6, 0.9, 13.2 * MH, 13.9 * MH, MASTH);
+  for (const dx of [-1.3, 0, 1.3])
+    box(x + dx, y, 0.9, 1.1, 13.9 * MH, 14.3 * MH, '#d8d2b4');
+}
+
+/* Filling station: its own plot between the roads, teal roof like the store,
+   forecourt facing Riverside Drive */
+bbox(22, Y0 + 15, 28, 22, 0, 4.2, WALL);
+for (let i = 0; i < 4; i++) bpitch(10 + i * 8, Y0 + 15, 8.5, 22, 4.2, 6.4, ROOF, 'y');
+bbox(22, Y0 + 26, 24, 2.4, 0, 4.8, '#23282c');      // plant screen at the rear
+for (const dx of [-11, 11]) for (const dy of [-4, 4])
+  bbox(23 + dx, -4 + dy, 0.5, 0.5, 0, 5.0, COL);
+bpitch(23, -4, 26, 11, 5.0, 6.0, '#c2c7c5', 'x', 2);
+for (const px of [14, 23, 32]) for (const py of [-7, -1])
+  bbox(px, py, 3.4, 1.1, 0, 1.5, '#5d666a');        // pump islands
+
+/* Boundary fence and the Seabraes footbridge, which lands by the junction */
+for (let x = WX0 + 2; x < WX1; x += 6) box(x, Y1 + 3.5, 0.22, 0.22, 0, 1.7, '#485055');
+const BX = 52;
+const DECK = [];
+for (let i = 0; i <= 14; i++){
+  const t = i / 14, y = Y1 + t * 46;
+  const z = 5.2 + 3.4 * Math.sin(Math.PI * t);
+  DECK.push([BX, y, z]);
+  box(BX, y, 4.2, 3.4, z, z + 0.55, BRIDGE);
+}
+box(BX - 6, Y1 + 42, 1.5, 1.5, 0, 17, '#e4e8e7', 0.22);
+box(BX, Y1, 3.2, 3.2, 4.4, 5.2, BRIDGE);
+box(BX, Y1 + 50, 4.0, 4.0, 0, 5.4, '#c8cdcc');
+
+/* An articulated lorry backing into the dock. It comes before the shop opens and
+   again late on, which is exactly when Trueno has the place to himself. The tractor
+   swings across the service run while the trailer is fed into the yard. */
+const LORRY = [];
+(function(){
+  const LY = SRY;
+  const t = function(X, Y, L, W, z0, z1, col, rot){
+    LORRY.push({ X:X, Y:Y, L:L, W:W, z0:z0, z1:z1, col:col, rot:rot || 0 });
+  };
+  t(X1 + 11, LY, 13.6, 2.4, 0.95, 1.15, '#34393c');
+  t(X1 + 11, LY, 13.6, 2.55, 1.15, 4.15, '#cfd3d2');
+  t(X1 + 4.6, LY, 0.3, 2.9, 1.0, 1.35, '#3a3f42');
+  for (const ax of [X1 + 5.2, X1 + 6.8, X1 + 8.4]) for (const sy of [-1.12, 1.12])
+    t(ax, LY + sy, 1.0, 0.32, 0, 1.0, '#1a1c1e');
+  for (const sy of [-1.0, 1.0]) t(X1 + 16.4, LY + sy, 0.32, 0.32, 0, 0.95, '#4a5155');
+  const R = -0.62, TX = X1 + 0.2, TY = LY + 6.1;
+  t(TX, TY, 6.0, 2.42, 0.42, 1.12, '#34393c', R);
+  t(TX + 0.6, TY, 4.4, 2.5, 1.12, 3.65, '#a4382f', R);
+  t(TX - 0.8, TY, 2.6, 2.4, 3.65, 4.05, '#8e3029', R);
+  t(TX + 2.7, TY, 0.5, 2.2, 1.12, 2.4, '#1d2124', R);
+  for (const dx of [1.9, -1.6]) for (const sy of [-1.06, 1.06]){
+    const c = Math.cos(R), sn = Math.sin(R);
+    t(TX + dx * c - sy * sn, TY + dx * sn + sy * c, 1.05, 0.34, 0, 1.05, '#1a1c1e', R);
+  }
+})();
+
+const PARKED = [];
+(function(){
+  let s = 20260917;
+  const rnd = function(){ s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (const y of ROWY) for (let x = X0 + 4; x < X1 - 5; x += BAY){
+    if (rnd() > 0.86) continue;
+    PARKED.push({ X:x, Y:y, c:CARS[(rnd() * CARS.length) | 0] });
+  }
+})();
+
+const LABELS = [
+  [X1 + 66, SMY, 11, 'TESCO EXTRA', 13],
+  [X1 + 10, SRY, 6, 'lorry dock', 11],
+  [(X0 + X1) / 2 + 20, WY, 8, 'covered walkway', 11.5],
+  [PVX, WY, 10, 'pavilion', 11.5],
+  [(X0 + X1) / 2, RAIL_Y, 2, 'railway', 11.5],
+  [(X0 + X1) / 2, -56, 2, 'River Tay', 12],
+  [(X0 + X1) / 2, -22, 1, 'A85 Riverside Drive', 10.5],
+  [BX, Y1 + 26, 12, 'Seabraes footbridge', 11],
+  [(X0 + X1) / 2 - 20, Y1 - 5, 2, 'service run', 10.5],
+  [22, Y0 + 15, 8, 'filling station', 10.5],
+  [JX, JY, 1, 'junction', 10],
+  [14, -48, 1, 'A85 roundabout', 10],
+  [X0 + 12, Y0 + 27, 1, 'in and out', 10],
+  [X0 + 52, Y0 + 30, 6, 'click and collect', 10],
+  [(X0 + X1) / 2, Y1 + 62, 1, 'waste ground', 10.5]
+];
+
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+let K = 4.2, panX = 0, panY = 0;
+let zoom = 1, KFIT = 4.2, CX = 0, CY = 0;   // zoom is 1..4 within the crop
+const orbit = 0;                 // the angle is locked
+let day = true, labels = true, cars = true, bays = false, lorry = true, zones = false;
+
+function dpr(){ return Math.min(2, window.devicePixelRatio || 1); }
+function pal(){ return day ? DAY : NIGHT; }
+function P(X, Y){
+  const a = BASE + orbit, c = Math.cos(a), s = Math.sin(a);
+  const dx = X - MX, dy = -(Y - MY);
+  return [dx * c - dy * s, dx * s + dy * c];
+}
+function SX(p){ return (p[0] - p[1]) * K + cv.width / (2 * dpr()) + panX; }
+function SY(p, z){ return (p[0] + p[1]) * K * 0.5 + cv.height / (2 * dpr()) * 0.96
+                          + panY - (z || 0) * K * 0.78; }
+function shade(hex, f){
+  const n = parseInt(hex.slice(1), 16);
+  return 'rgb(' + Math.min(255, (n >> 16) * f | 0) + ',' +
+                  Math.min(255, ((n >> 8) & 255) * f | 0) + ',' +
+                  Math.min(255, (n & 255) * f | 0) + ')';
+}
+function rgb(c){ return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+
+function corners(o){
+  const a = BASE + orbit + (o.rot || 0), c = Math.cos(a), s = Math.sin(a);
+  const hl = o.L / 2, hw = o.W / 2, p = P(o.X, o.Y);
+  return [[hl,hw],[hl,-hw],[-hl,-hw],[-hl,hw]].map(function(q){
+    return [p[0] + q[0] * c - q[1] * s, p[1] + q[0] * s + q[1] * c];
+  });
+}
+const RAY = [1, 1, 1 / 0.78];
+function projInt(o, cs, n){
+  let lo = Infinity, hi = -Infinity;
+  for (const q of cs){
+    const xy = q[0] * n[0] + q[1] * n[1];
+    for (const z of [o.z0, o.z1]){
+      const d = xy + z * n[2];
+      if (d < lo) lo = d;
+      if (d > hi) hi = d;
+    }
+  }
+  return [lo, hi];
+}
+function sepOrder(A, B){
+  const E = 1e-9;
+  const aa = BASE + orbit + (A.rot || 0), ab = BASE + orbit + (B.rot || 0);
+  const axes = [[0,0,1], [Math.cos(aa), Math.sin(aa), 0], [-Math.sin(aa), Math.cos(aa), 0],
+                [Math.cos(ab), Math.sin(ab), 0], [-Math.sin(ab), Math.cos(ab), 0]];
+  for (const n of axes){
+    const a = projInt(A, A._cs, n), b = projInt(B, B._cs, n);
+    let sign = 0;
+    if (a[1] <= b[0] + E) sign = 1;
+    else if (b[1] <= a[0] + E) sign = -1;
+    else continue;
+    const d = n[0] * RAY[0] + n[1] * RAY[1] + n[2] * RAY[2];
+    if (d > E) return sign;
+    if (d < -E) return -sign;
+  }
+  return 0;
+}
+function order(list){
+  for (const o of list){
+    const cs = corners(o);
+    o._cs = cs;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, lo = Infinity, hi = -Infinity;
+    for (const q of cs){
+      const d = q[0] + q[1];
+      if (d < lo) lo = d;
+      if (d > hi) hi = d;
+      for (const z of [o.z0, o.z1]){
+        const sx = SX(q), sy = SY(q, z);
+        if (sx < x0) x0 = sx; if (sx > x1) x1 = sx;
+        if (sy < y0) y0 = sy; if (sy > y1) y1 = sy;
+      }
+    }
+    o._bb = [x0, y0, x1, y1];
+    o._key = (lo + hi) / 2 + 1.282 * (o.z0 + o.z1) / 2;
+  }
+  const n = list.length, adj = [], deg = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) adj.push([]);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++){
+    const A = list[i], B = list[j];
+    if (A._bb[2] <= B._bb[0] || B._bb[2] <= A._bb[0] ||
+        A._bb[3] <= B._bb[1] || B._bb[3] <= A._bb[1]) continue;
+    const o = sepOrder(A, B);
+    if (!o) continue;
+    const f = o > 0 ? i : j, l = f === i ? j : i;
+    adj[f].push(l); deg[l]++;
+  }
+  const ready = [], out = [], done = new Array(n).fill(false);
+  for (let i = 0; i < n; i++) if (!deg[i]) ready.push(i);
+  while (ready.length){
+    let bi = 0;
+    for (let k = 1; k < ready.length; k++)
+      if (list[ready[k]]._key < list[ready[bi]]._key) bi = k;
+    const i = ready.splice(bi, 1)[0];
+    out.push(list[i]); done[i] = true;
+    for (const j of adj[i]) if (--deg[j] === 0) ready.push(j);
+  }
+  if (out.length < n){
+    const rest = [];
+    for (let i = 0; i < n; i++) if (!done[i]) rest.push(list[i]);
+    rest.sort(function(a, b){ return a._key - b._key; });
+    for (const o of rest) out.push(o);
+  }
+  return out;
+}
+
+function poly(pts, fill){
+  g.fillStyle = fill;
+  g.beginPath();
+  for (let i = 0; i < pts.length; i++){
+    const q = P(pts[i][0], pts[i][1]);
+    if (i) g.lineTo(SX(q), SY(q, 0)); else g.moveTo(SX(q), SY(q, 0));
+  }
+  g.closePath(); g.fill();
+}
+function quad(x0, y0, x1, y1, fill){
+  const pts = [P(x0,y0), P(x1,y0), P(x1,y1), P(x0,y1)];
+  g.fillStyle = fill;
+  g.beginPath(); g.moveTo(SX(pts[0]), SY(pts[0], 0));
+  for (let i = 1; i < 4; i++) g.lineTo(SX(pts[i]), SY(pts[i], 0));
+  g.closePath(); g.fill();
+}
+function line(x0, y0, x1, y1, col, w, z){
+  const a = P(x0, y0), b = P(x1, y1);
+  g.strokeStyle = col; g.lineWidth = w;
+  g.beginPath(); g.moveTo(SX(a), SY(a, z || 0)); g.lineTo(SX(b), SY(b, z || 0)); g.stroke();
+}
+function drawBox(o){
+  const c = o._cs || corners(o), p = P(o.X, o.Y), dc = p[0] + p[1];
+  for (let i = 0; i < 4; i++){
+    const a = c[i], b = c[(i + 1) % 4];
+    if (((a[0] + b[0]) + (a[1] + b[1])) / 2 <= dc) continue;
+    g.fillStyle = shade(o.col, Math.abs(a[0] - b[0]) > Math.abs(a[1] - b[1]) ? 0.62 : 0.46);
+    g.beginPath();
+    g.moveTo(SX(a), SY(a, o.z0)); g.lineTo(SX(b), SY(b, o.z0));
+    g.lineTo(SX(b), SY(b, o.z1)); g.lineTo(SX(a), SY(a, o.z1));
+    g.closePath(); g.fill();
+  }
+  g.fillStyle = o.col;
+  g.beginPath(); g.moveTo(SX(c[0]), SY(c[0], o.z1));
+  for (let i = 1; i < 4; i++) g.lineTo(SX(c[i]), SY(c[i], o.z1));
+  g.closePath(); g.fill();
+}
+
+/* The site runs across the frame on the iso diagonal, which leaves the top-right
+   and bottom-left corners holding nothing but river and waste ground. Those are the
+   two places a telemetry panel can live without covering anything. This works out
+   the largest rectangle that fits in each, so panels can be sized against a real
+   number rather than guessed at. */
+function siteQuads(){
+  const q = function(ax, ay, bx, by){
+    return [[ax,ay],[bx,ay],[bx,by],[ax,by]].map(function(c){
+      const p = P(c[0], c[1]);
+      return [SX(p), SY(p, 0)];
+    });
+  };
+  return [q(X0, Y0, X1 + 4, Y1), q(X1, SMY - 33, X1 + STORE_L, SMY + 33)];
+}
+function inQuad(x, y, Q){
+  let sign = 0;
+  for (let i = 0; i < 4; i++){
+    const a = Q[i], b = Q[(i + 1) % 4];
+    const c = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+    if (Math.abs(c) < 1e-9) continue;
+    const sg = c > 0 ? 1 : -1;
+    if (!sign) sign = sg; else if (sg !== sign) return false;
+  }
+  return true;
+}
+function freeRect(corner){
+  const d = dpr(), W = cv.width / d, H = cv.height / d, Q = siteQuads();
+  const clear = function(x0, y0, x1, y1){
+    for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++){
+      const x = x0 + (x1 - x0) * i / 10, y = y0 + (y1 - y0) * j / 10;
+      for (const q of Q) if (inQuad(x, y, q)) return false;
+    }
+    return true;
+  };
+  let best = null;
+  for (let h = 40; h <= H * 0.75; h += 10){
+    let w = 0;
+    for (let t = 40; t <= W * 0.75; t += 10){
+      const x0 = corner === 'tr' ? W - t : 0, x1 = corner === 'tr' ? W : t;
+      const y0 = corner === 'tr' ? 0 : H - h, y1 = corner === 'tr' ? h : H;
+      if (clear(x0, y0, x1, y1)) w = t; else break;
+    }
+    if (w && (!best || w * h > best.w * best.h)) best = { w:w, h:h };
+  }
+  return best;
+}
+function render(){
+  const d = dpr();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = day ? '#12161a' : '#05070a';
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.setTransform(d, 0, 0, d, 0, 0);
+  const C = pal();
+
+  for (const a of AREAS) quad(a.x0, a.y0, a.x1, a.y1, rgb(C[a.k]));
+  for (const r of ROADS) poly(r.p, rgb(C[r.k]));
+
+  /* sodium pools, laid on the ground before anything stands on it */
+  if (!day){
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const [x, y] of MASTS){
+      const p = P(x, y), sx = SX(p), sy = SY(p, 0), r = 46 * K;
+      const gr = g.createRadialGradient(sx, sy, 3, sx, sy, r);
+      gr.addColorStop(0, 'rgba(255,206,140,0.30)');
+      gr.addColorStop(0.45, 'rgba(255,198,126,0.12)');
+      gr.addColorStop(1, 'rgba(255,196,124,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(sx, sy, r, r * 0.5, 0, 0, 6.2832); g.fill();
+    }
+    const p = P(250, 44), sx = SX(p), sy = SY(p, 0), r = 60 * K;
+    const gr = g.createRadialGradient(sx, sy, 4, sx, sy, r);
+    gr.addColorStop(0, 'rgba(226,232,210,0.16)');
+    gr.addColorStop(1, 'rgba(226,232,210,0)');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(sx, sy, r, r * 0.5, 0, 0, 6.2832); g.fill();
+    g.restore();
+  }
+
+  if (bays){
+    const col = day ? 'rgba(228,232,234,0.26)' : 'rgba(228,232,234,0.16)';
+    for (const b of BANDS){
+      for (let x = X0 + 4; x < X1 - 5; x += BAY){
+        line(x, b, x, b + 4.8, col, 1);
+        line(x, b + 10.8, x, b + 15.6, col, 1);
+      }
+    }
+  }
+  for (const ry of RAILS)
+    line(WX0, ry, WX1, ry, day ? 'rgba(158,164,168,0.6)' : 'rgba(120,128,134,0.4)', 1.3);
+  for (const ly of [Y1 - LANE_W + 0.6, Y1 - 0.6])
+    line(X0, ly, X1, ly, day ? 'rgba(228,198,92,0.42)' : 'rgba(206,180,90,0.26)', 1.2);
+  for (const ly of [-26, -14])
+    line(WX0, ly, WX1, ly, day ? 'rgba(228,198,92,0.5)' : 'rgba(210,182,88,0.3)', 1.2);
+
+  const list = PROPS.slice();
+  if (lorry) for (const o of LORRY) list.push(o);
+  if (cars) for (const c of PARKED)
+    list.push({ X:c.X, Y:c.Y, L:1.85, W:4.4, z0:0, z1:1.5, col:c.c, rot:0 });
+
+  const sorted = order(list);
+  for (const o of sorted) drawBox(o);
+
+  /* bridge stays, drawn over the deck they hold up */
+  const top = P(BX - 6, Y1 + 42), tx = SX(top), ty = SY(top, 17);
+  g.strokeStyle = day ? 'rgba(232,236,235,0.75)' : 'rgba(200,208,206,0.5)';
+  g.lineWidth = 1;
+  for (let i = 2; i < DECK.length; i += 2){
+    const dk = DECK[i], p = P(dk[0], dk[1]);
+    g.beginPath(); g.moveTo(tx, ty); g.lineTo(SX(p), SY(p, dk[2] + 0.55)); g.stroke();
+  }
+
+  if (labels){
+    g.textAlign = 'center';
+    for (const [x, y, z, txt, size] of LABELS){
+      const p = P(x, y), sx = SX(p), sy = SY(p, z);
+      g.font = '600 ' + size + 'px ui-monospace,monospace';
+      g.lineWidth = 3.6; g.strokeStyle = 'rgba(6,8,10,0.92)'; g.strokeText(txt, sx, sy);
+      g.fillStyle = day ? '#eef2f4' : '#dfe6ea'; g.fillText(txt, sx, sy);
+    }
+  }
+
+  if (zones){
+    const d2 = dpr(), W2 = cv.width / d2, H2 = cv.height / d2;
+    for (const c of ['tr', 'bl']){
+      const r = freeRect(c);
+      if (!r) continue;
+      const x = c === 'tr' ? W2 - r.w : 0, y = c === 'tr' ? 0 : H2 - r.h;
+      g.strokeStyle = 'rgba(77,127,150,0.85)'; g.lineWidth = 1.4;
+      g.setLineDash([6, 4]); g.strokeRect(x + 1, y + 1, r.w - 2, r.h - 2);
+      g.setLineDash([]);
+      g.fillStyle = 'rgba(77,127,150,0.10)'; g.fillRect(x, y, r.w, r.h);
+      g.font = '600 12px ui-monospace,monospace'; g.textAlign = 'left';
+      g.fillStyle = '#8fc3d8';
+      g.fillText(Math.round(r.w) + ' × ' + Math.round(r.h) + ' css px',
+                 x + 10, y + (c === 'tr' ? 22 : r.h - 12));
+    }
+  }
+
+  /* north arrow: north is screen-left in this orientation */
+  const W = cv.width / d, H = cv.height / d;
+  g.strokeStyle = 'rgba(196,204,210,0.8)'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(58, H - 30); g.lineTo(26, H - 30); g.stroke();
+  g.beginPath(); g.moveTo(26, H - 30); g.lineTo(35, H - 35); g.lineTo(35, H - 25);
+  g.closePath(); g.fillStyle = 'rgba(196,204,210,0.9)'; g.fill();
+  g.font = '600 11px ui-monospace,monospace'; g.textAlign = 'center';
+  g.fillText('N', 18, H - 26);
+
+  document.getElementById('hud').textContent =
+    (WX1 - WX0) + ' m square world  ·  ' + PARK_L + ' × ' + PARK_W + ' m of tarmac  ·  ' +
+    K.toFixed(2) + ' px/m  ·  ×' + zoom.toFixed(2) +
+    '  ·  ' +
+    (day ? 'day' : 'night') + '  ·  ' + sorted.length + ' boxes';
+  document.getElementById('key').innerHTML =
+    'wheel to zoom  ·  angle and framing locked<br>' +
+    'railway on your left walking in → store';
+  document.getElementById('stat').textContent = PARKED.length + ' cars parked';
+}
+
+/* Crop to the car park: its full length, a slice of railway behind, the walkway in
+   front, and the near end of the store. The masts are included so their heads are
+   never clipped. Matches the framing we settled on. */
+function fit(){
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  const probe = function(X, Y, z){
+    const p = P(X, Y), sx = (p[0] - p[1]), sy = (p[0] + p[1]) * 0.5 - z * 0.78;
+    if (sx < x0) x0 = sx; if (sx > x1) x1 = sx;
+    if (sy < y0) y0 = sy; if (sy > y1) y1 = sy;
+  };
+  for (const X of [X0 - 4, X1 + 34]) for (const Y of [Y0 - 13, Y1 + 19]) probe(X, Y, 0);
+  probe(X1 + 26, SMY, 9.6 * BH);
+  for (const m of MASTS) probe(m[0], m[1], 14.3 * MH);
+  const d = dpr(), W = cv.width / d, H = cv.height / d;
+  KFIT = Math.min(W / (x1 - x0), H / (y1 - y0));
+  CX = (x0 + x1) / 2; CY = (y0 + y1) / 2;
+  apply();
+}
+/* The frame never moves. Zooming scales about the crop centre, so you can go in for
+   a closer look but never pan off to the store or out over the river. */
+function apply(){
+  const d = dpr(), H = cv.height / d;
+  K = KFIT * zoom;
+  panX = -CX * K;
+  panY = -CY * K - H * 0.48 + H / 2;
+}
+function resize(){
+  const d = dpr();
+  cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d);
+  fit(); render();
+}
+
+/* Angle and framing are both fixed. There is nothing to drag. */
+cv.addEventListener('wheel', function(e){
+  e.preventDefault();
+  zoom = Math.max(1, Math.min(4, zoom * (e.deltaY > 0 ? 0.9 : 1.111)));
+  apply(); render();
+}, { passive:false });
+
+const $ = function(id){ return document.getElementById(id); };
+$('bDay').onclick = function(){ day = !day; this.classList.toggle('on', day);
+  this.textContent = day ? 'day' : 'night'; render(); };
+$('bLab').onclick = function(){ labels = !labels; this.classList.toggle('on', labels); render(); };
+$('bCars').onclick = function(){ cars = !cars; this.classList.toggle('on', cars); render(); };
+$('bGrid').onclick = function(){ bays = !bays; this.classList.toggle('on', bays); render(); };
+$('bLorry').onclick = function(){ lorry = !lorry;
+  this.classList.toggle('on', lorry); render(); };
+$('bZones').onclick = function(){ zones = !zones;
+  this.classList.toggle('on', zones); render(); };
+$('bFit').onclick = function(){ zoom = 1; fit(); render(); };
+window.addEventListener('resize', resize);
+resize();
+</script>

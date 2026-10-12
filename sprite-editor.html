@@ -1,0 +1,1529 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tesco Trueno sprite editor</title>
+<style>
+html,body{margin:0;height:100%;background:#0a0c0e;color:#cfd6db;overflow:hidden;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#app{display:flex;height:100%}
+.pane{background:rgba(9,11,13,.9);border-right:1px solid #23282d;display:flex;
+  flex-direction:column;flex:0 0 212px;min-width:0;overflow:hidden}
+.pane.right{border-right:0;border-left:1px solid #23282d;flex:0 0 248px}
+#mid{flex:1 1 260px;display:flex;flex-direction:column;min-width:200px}
+#bar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #23282d;
+  flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+#bar button{flex:0 0 auto}
+#cvwrap{flex:1;position:relative;min-height:0}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;left:10px;bottom:8px;color:#2c3237;pointer-events:none;font-size:11px}
+button,select,input{font:inherit;color:#cfd6db;background:#12161a;border:1px solid #262c32;
+  border-radius:2px;padding:3px 7px}
+button{cursor:pointer}
+button:hover{border-color:#3a444c;background:#181d22}
+button.on{border-color:#4d7f96;color:#8fc3d8}
+button.warn:hover{border-color:#8d3b36;color:#e8927f}
+input[type=number]{width:62px;padding:2px 4px;text-align:right}
+input[type=text]{width:100%;box-sizing:border-box;padding:2px 5px}
+input[type=color]{width:26px;height:20px;padding:0;border:1px solid #262c32;background:none}
+.sec{border-bottom:1px solid #1b2025;padding:7px 8px}
+.sec h4{margin:0 0 6px;font-size:11px;font-weight:400;color:#6c7780;letter-spacing:.06em;
+  text-transform:uppercase}
+.tabs{display:flex;flex-wrap:wrap;gap:4px}
+.tab{padding:2px 7px;border:1px solid #262c32;border-radius:2px;cursor:pointer;background:#12161a}
+.tab.on{border-color:#4d7f96;color:#8fc3d8;background:#141b20}
+.list{flex:1;overflow:auto;padding:4px 6px}
+.row{display:flex;align-items:center;gap:6px;padding:3px 5px;border:1px solid transparent;
+  border-radius:2px;cursor:pointer}
+.row:hover{background:#12171b}
+.row.on{border-color:#4d7f96;background:#141b20}
+.chip{width:11px;height:11px;flex:0 0 11px;border:1px solid #2a3137;border-radius:1px}
+.chip.nil{background:repeating-linear-gradient(45deg,#2a3137 0 3px,#0d1013 3px 6px)}
+.dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:transparent}
+.dot.w{background:#e2a84a}
+.dot.x{background:#4d7f96}
+.dot.b{background:#e8523f}
+.row span.nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row span.dm{color:#5c666e;font-size:10.5px}
+.fld{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.fld label{width:66px;color:#7e8890;cursor:ew-resize;user-select:none}
+.fld label:hover{color:#b6c0c7}
+.trip{display:flex;gap:5px;margin-bottom:5px}
+.trip input{width:100%}
+.faces{display:flex;flex-direction:column;gap:3px}
+.face{display:flex;align-items:center;gap:5px}
+.face b{width:30px;font-weight:400;color:#7e8890}
+.face select{flex:1;padding:2px 4px}
+.face input[type=number]{width:44px}
+.pal{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}
+.sw{width:15px;height:15px;border:1px solid #2a3137;border-radius:1px;cursor:pointer}
+.sw:hover{border-color:#6f7c85}
+#txt{position:absolute;inset:0;background:#080a0c;display:none;flex-direction:column}
+#txt.on{display:flex}
+#txt textarea{flex:1;background:#080a0c;color:#a9b4bb;border:0;border-bottom:1px solid #23282d;
+  padding:10px;font:11.5px/1.5 ui-monospace,monospace;resize:none;outline:none}
+#txtbar{display:flex;gap:6px;padding:6px 8px;align-items:center}
+.err{color:#e8927f;padding:4px 8px;font-size:11px;white-space:pre-wrap}
+.hint{color:#5c666e;font-size:10.5px;line-height:1.5;padding:7px 8px}
+.sp{flex:1}
+</style>
+
+<div id="app">
+  <div class="pane">
+    <div class="sec">
+      <h4>sprite</h4>
+      <div class="fld" style="margin:0">
+        <select id="spSel" style="flex:1"></select>
+      </div>
+      <div class="tabs" style="margin-top:6px">
+        <button id="spAdd">new</button><button id="spDup">dup</button>
+        <button id="spRen">rename</button><button id="spDel" class="warn">del</button>
+      </div>
+      <div class="fld" style="margin-top:7px">
+        <label style="cursor:default">size</label>
+        <span id="szOut" style="color:#7e8890;font-size:11px"></span>
+      </div>
+      <div class="fld">
+        <label for="scK" style="cursor:default">scale</label>
+        <input type="number" id="scK" step="0.05" min="0" value="1">
+        <button id="scGo">apply</button>
+      </div>
+      <div class="fld">
+        <label for="scH" style="cursor:default">height</label>
+        <input type="number" id="scH" step="0.01" min="0">
+        <button id="scFit">fit</button>
+      </div>
+      <div class="tabs">
+        <button id="gndGo">ground to z=0</button>
+      </div>
+      <div class="fld" style="margin-top:7px">
+        <label for="spMass" style="cursor:default">mass</label>
+        <input type="number" id="spMass" step="1" min="0" placeholder="kg">
+        <span style="color:#5c666e;font-size:11px">kg</span>
+      </div>
+      <div class="fld" style="margin-bottom:0;align-items:flex-start">
+        <label style="cursor:default">derived</label>
+        <span id="mmOut" style="color:#7e8890;font-size:11px;line-height:1.5"></span>
+      </div>
+      <div class="err" id="scErr" style="padding:4px 0 0" hidden></div>
+    </div>
+    <div class="sec">
+      <h4>states</h4>
+      <div class="tabs" id="stTabs"></div>
+      <div class="tabs" style="margin-top:6px">
+        <button id="stAdd">new</button><button id="stDup">dup</button>
+        <button id="stRen">rename</button><button id="stDel" class="warn">del</button>
+      </div>
+    </div>
+    <div class="sec" style="border-bottom:0;padding-bottom:4px">
+      <h4>boxes</h4>
+      <div class="tabs">
+        <button id="bxAdd">add</button><button id="bxDup">dup</button>
+        <button id="bxDel" class="warn">del</button>
+      </div>
+    </div>
+    <div class="list" id="bxList"></div>
+      <div class="hint">clash view: red is buried in something opaque,
+      blue interpenetrates so its order is ambiguous where they cross</div>
+    <div class="hint">click a box to select &middot; drag it to move on one axis &middot;
+      click again to pick a face &middot; drag that face to resize &middot;
+      shift coarse, alt fine &middot; middle-drag pans &middot; ctrl+z undo</div>
+  </div>
+
+  <div id="mid">
+    <div id="bar">
+      <button id="imp">import</button>
+      <button id="mrg">merge</button>
+      <input type="file" id="file" accept=".txt,.sprite,.text" hidden>
+      <button id="exp">export</button>
+      <button id="showTxt">text</button>
+      <span style="width:8px"></span>
+      <button id="spinB" class="on">spin</button>
+      <button id="gridB" class="on">grid</button>
+      <button id="ghostB">ghost</button>
+      <button id="refB">scale ref</button>
+      <button id="clashB">clash</button>
+      <button id="noclashB" class="on">no burying</button>
+      <button id="fit">fit</button>
+      <select id="bgSel" title="ground"></select>
+      <span class="sp"></span>
+      <span id="stat" style="color:#5c666e"></span>
+    </div>
+    <div id="cvwrap">
+      <canvas id="cv"></canvas>
+      <div id="hud"></div>
+      <div id="txt">
+        <textarea id="ta" spellcheck="false"></textarea>
+        <div id="txtbar">
+          <button id="apply">apply</button>
+          <button id="mergeTxt">merge</button>
+          <button id="reload">reload from model</button>
+          <button id="closeTxt">close</button>
+          <span class="sp"></span>
+          <span id="taErr" class="err"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane right">
+    <div class="sec">
+      <h4>box</h4>
+      <div class="fld"><label for="bn" style="cursor:default">name</label>
+        <input type="text" id="bn"></div>
+      <h4 style="margin-top:8px">position</h4>
+      <div class="fld"><label>f fwd</label><input type="number" id="pf" step="0.01"></div>
+      <div class="fld"><label>l side</label><input type="number" id="pl" step="0.01"></div>
+      <div class="fld"><label>z base</label><input type="number" id="pz" step="0.01"></div>
+      <h4>size</h4>
+      <div class="fld"><label>L along f</label><input type="number" id="sL" step="0.01" min="0"></div>
+      <div class="fld"><label>W along l</label><input type="number" id="sW" step="0.01" min="0"></div>
+      <div class="fld"><label>H up</label><input type="number" id="sH" step="0.01" min="0"></div>
+      <div class="fld"><label id="rotLab">rot</label>
+        <input type="number" id="rot" step="0.01">
+        <label style="width:auto;cursor:default"><input type="checkbox" id="mir"> mir</label></div>
+      <div class="fld"><label for="bd" style="cursor:default">density</label>
+        <input type="number" id="bd" step="0.1" min="0.01">
+        <span style="color:#5c666e;font-size:11px">rel.</span></div>
+      <div class="fld"><label id="roofLab">roof</label>
+        <input type="number" id="roof" step="0.02" min="0" max="1">
+        <label id="meshLab">mesh</label><input type="number" id="mesh" step="0.005" min="0"></div>
+    </div>
+    <div class="sec">
+      <h4>base colour</h4>
+      <div class="fld" style="margin:0">
+        <input type="color" id="col"><input type="number" id="alp" min="0" max="100" step="1">
+        <span style="color:#5c666e">% alpha</span>
+      </div>
+      <div class="pal" id="pal"></div>
+    </div>
+    <div class="sec" style="flex:1;overflow:auto">
+      <h4>faces</h4>
+      <div class="faces" id="faces"></div>
+      <div class="hint" style="padding:8px 0 0">inherit follows the base colour.
+        none leaves the face undrawn, so you see through it.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const HEADER = `# tesco-trueno sprite format v1
+#
+# axes   f = along facing (+ forward), l = lateral (+ left), z = up. metres.
+# box    box <f> <l> <z>  <L> <W> <H>  <colour>  [flags]
+#          f,l are the box centre; z is its BASE. L is along f, W along l, H up.
+# colour #rrggbb | #rrggbbaa | none
+# flags  n=<label>          a name, for the editor list
+#        mir=1              also draw the mirror image at -l (swaps lft/rgt)
+#        rot=<radians>      extra yaw, added to the sprite heading
+#        top= bot= fwd= aft= lft= rgt=   per-face colour, overrides the base
+#        roof=<frac>        inset glass panel on the top face, this fraction of L
+#        glass=<colour>     colour of that inset panel
+#        mesh=<spacing>     stroke wire mesh at this spacing instead of filling
+#        d=<density>        relative density, default 1. mass is distributed by d*volume
+# mass   mass <kg> after a sprite line sets that sprite's real total mass.
+#        per-box mass, centre of mass and yaw inertia are DERIVED, never stored,
+#        so they survive scaling and resizing.
+#
+# A '#' starts a comment only at the beginning of a line, because colours also
+# begin with '#'. For a comment on the end of a box line, use ';' instead.
+#
+# Faces are named in the box's own frame, so they stay right through rotation.
+# Any box with mesh, a none face or an alpha face renders all six faces sorted
+# back to front; fully opaque boxes cull their rear faces.
+
+`;
+
+const FACES = ['top','bot','fwd','aft','lft','rgt'];
+const DEFAULT_PAL = ['#e9eae5','#c7c8c3','#b9bcbe','#8e9398','#7d8489','#5b6169',
+  '#3c4148','#23272c','#15171a','#0d0e10','#101214','#c2a08a','#cbcec9','#3a3735',
+  '#6f5f5c','#a89a86','#8d6b70','#5c7a74','#46352f','#4a5a52','#35618c','#7a4043',
+  '#c0392b','#cfe03c','#e2a84a','#d08a4a','#aab3b7','#798287','#dfe2df','#9aa3a8'];
+const FLAGKEYS = ['n','mir','rot','roof','glass','mesh','d'].concat(FACES);
+
+function isNone(c){ return c === 'none'; }
+function hasAlpha(c){ return typeof c === 'string' && c.length === 9 &&
+  c.slice(7,9).toLowerCase() !== 'ff'; }
+function validCol(c){ return c === 'none' || /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c); }
+function shade(col, f){
+  if (!col || isNone(col)) return null;
+  const h = col.slice(1), n = parseInt(h.slice(0,6), 16);
+  const a = h.length >= 8 ? parseInt(h.slice(6,8), 16) / 255 : 1;
+  const r = Math.min(255, (n >> 16) * f | 0), g = Math.min(255, ((n >> 8) & 255) * f | 0),
+        b = Math.min(255, (n & 255) * f | 0);
+  return a >= 1 ? 'rgb(' + r + ',' + g + ',' + b + ')'
+                : 'rgba(' + r + ',' + g + ',' + b + ',' + a.toFixed(3) + ')';
+}
+
+function parse(txt){
+  const doc = { sprites: [] }, errs = [];
+  let sp = null, st = null, ln = 0;
+  for (const raw of txt.split(/\r?\n/)){
+    ln++;
+    let line = raw.trim();
+    if (!line || line.charAt(0) === '#') continue;
+    const sc = line.indexOf(';');
+    if (sc >= 0) line = line.slice(0, sc).trim();
+    if (!line) continue;
+    const t = line.split(/\s+/), k = t[0].toLowerCase();
+    if (k === 'sprite'){
+      if (!t[1]) { errs.push(ln + ': sprite needs a name'); continue; }
+      sp = { name: t[1], mass: 0, states: [] }; doc.sprites.push(sp); st = null;
+    } else if (k === 'state'){
+      if (!sp){ sp = { name: 'sprite', mass: 0, states: [] }; doc.sprites.push(sp); }
+      if (!t[1]) { errs.push(ln + ': state needs a name'); continue; }
+      st = { name: t[1], boxes: [] }; sp.states.push(st);
+    } else if (k === 'mass'){
+      if (!sp){ errs.push(ln + ': mass outside any sprite'); continue; }
+      const m = Number(t[1]);
+      if (!isFinite(m) || m < 0){ errs.push(ln + ': mass must be a number in kg'); continue; }
+      sp.mass = m;
+    } else if (k === 'box'){
+      if (!st){ errs.push(ln + ': box outside any state'); continue; }
+      if (t.length < 8){ errs.push(ln + ': box needs f l z L W H colour'); continue; }
+      const v = t.slice(1,7).map(Number);
+      if (v.some(function(x){ return !isFinite(x); })){
+        errs.push(ln + ': box has a non-numeric field'); continue; }
+      if (!validCol(t[7])){ errs.push(ln + ': bad colour "' + t[7] + '"'); continue; }
+      const b = { f:v[0], l:v[1], z:v[2], L:Math.abs(v[3]), W:Math.abs(v[4]), H:Math.abs(v[5]),
+                  col:t[7], n:'', mir:0, rot:0, roof:0, glass:'', mesh:0, d:1 };
+      for (const fc of FACES) b[fc] = '';
+      let bad = false;
+      for (let i = 8; i < t.length; i++){
+        const eq = t[i].indexOf('=');
+        if (eq < 1){ errs.push(ln + ': "' + t[i] + '" is not key=value'); bad = true; break; }
+        const key = t[i].slice(0, eq), val = t[i].slice(eq + 1);
+        if (FLAGKEYS.indexOf(key) < 0){ errs.push(ln + ': unknown flag "' + key + '"'); bad = true; break; }
+        if (key === 'n') b.n = val;
+        else if (key === 'mir') b.mir = (val === '1' || val === 'true') ? 1 : 0;
+        else if (key === 'd'){
+          const x = Number(val);
+          if (!isFinite(x) || x <= 0){
+            errs.push(ln + ': d must be a positive number'); bad = true; break; }
+          b.d = x;
+        }
+        else if (key === 'rot' || key === 'roof' || key === 'mesh'){
+          const x = Number(val);
+          if (!isFinite(x)){ errs.push(ln + ': ' + key + ' must be a number'); bad = true; break; }
+          b[key] = key === 'rot' ? x : Math.max(0, x);
+        } else {
+          if (!validCol(val)){ errs.push(ln + ': bad colour for ' + key); bad = true; break; }
+          b[key] = val;
+        }
+      }
+      if (!bad) st.boxes.push(b);
+    } else errs.push(ln + ': unknown directive "' + t[0] + '"');
+  }
+  if (!doc.sprites.length) errs.push('no sprites found');
+  return { doc: doc, errs: errs };
+}
+
+const HEAD = HEADER;
+function num(x){
+  let s = (Math.round(x * 1000) / 1000).toFixed(3);
+  if (s.charAt(s.length - 1) === '0') s = s.slice(0, -1);
+  return (x >= 0 ? ' ' : '') + s;
+}
+function serialise(doc){
+  let o = HEAD;
+  for (const sp of doc.sprites){
+    o += '\nsprite ' + sp.name + '\n';
+    if (sp.mass > 0) o += 'mass ' + sp.mass + '\n';
+    for (const st of sp.states){
+      o += 'state ' + st.name + '\n';
+      for (const b of st.boxes){
+        let s = '  box ' + num(b.f) + ' ' + num(b.l) + ' ' + num(b.z) + '  ' +
+                num(b.L) + ' ' + num(b.W) + ' ' + num(b.H) + '  ' + b.col;
+        if (b.mesh) s += ' mesh=' + b.mesh;
+        if ((b.d || 1) !== 1) s += ' d=' + b.d;
+        if (b.roof) s += ' roof=' + b.roof;
+        if (b.glass) s += ' glass=' + b.glass;
+        for (const fc of FACES) if (b[fc]) s += ' ' + fc + '=' + b[fc];
+        if (b.mir) s += ' mir=1';
+        if (b.rot) s += ' rot=' + b.rot;
+        if (b.n) s += ' n=' + b.n;
+        o += s + '\n';
+      }
+    }
+  }
+  return o;
+}
+
+const cv = document.getElementById('cv'), g2 = cv.getContext('2d');
+let K = 46, camA = 0.6, camZ = 1, panX = 0, panY = 0, spin = true, grid = true,
+    ghost = false, ref = false;
+let DOC, spI = 0, stI = 0, bxI = -1, faceSel = '';
+let CLASH = new Map(), INTER = new Map(), showClash = false, noClash = true, axisLock = '';
+let bgI = 3, groundTex = null;
+const GROUND = [
+  { n:'night',    c:[10, 12, 14],    v:3,  g:0 },
+  { n:'asphalt',  c:[43, 49, 55],    v:10, g:0 },
+  { n:'grass',    c:[36, 58, 38],    v:11, g:1.6 },
+  { n:'gravel',   c:[110, 101, 88],  v:17, g:0 },
+  { n:'concrete', c:[142, 145, 140], v:7,  g:0 }
+];
+function groundLuma(){ const c = GROUND[bgI].c;
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+function lightGround(){ return groundLuma() > 90; }
+const BURY_WARN = 0.90, BURY_BAD = 0.995, BURY_BLOCK = 0.995;
+let pickList = [];
+
+function boxes(){ const st = state(); return st ? st.boxes : []; }
+function sprite(){ return DOC.sprites[spI]; }
+function state(){ const sp = sprite(); return sp ? sp.states[stI] : null; }
+function cur(){ return boxes()[bxI] || null; }
+
+function faceCol(b, fc){
+  const c = b[fc] || b.col;
+  return c;
+}
+
+function expand(bs){
+  const out = [];
+  for (let i = 0; i < bs.length; i++){
+    const b = bs[i];
+    out.push({ b:b, i:i, l:b.l, rot:b.rot || 0, flip:0 });
+    if (b.mir) out.push({ b:b, i:i, l:-b.l, rot:-(b.rot || 0), flip:1 });
+  }
+  return out;
+}
+
+function makeParts(bs, ang){
+  const ca = Math.cos(ang), sa = Math.sin(ang), out = [];
+  for (const e of expand(bs)){
+    const b = e.b;
+    out.push({ x:b.f * ca - e.l * sa, y:b.f * sa + e.l * ca,
+               L:b.L, W:b.W, z0:b.z, z1:b.z + b.H, b:b, i:e.i, flip:e.flip,
+               a:ang + e.rot });
+  }
+  return out;
+}
+
+const RAY = [1, 1, 1 / 0.78];
+function projInt(p, n){
+  let lo = Infinity, hi = -Infinity;
+  for (const q of p.cs){
+    const xy = q[0] * n[0] + q[1] * n[1];
+    for (const z of [p.z0, p.z1]){
+      const d = xy + z * n[2];
+      if (d < lo) lo = d;
+      if (d > hi) hi = d;
+    }
+  }
+  return [lo, hi];
+}
+function sepAxes(A, B){
+  const ca = Math.cos(A.a), sa = Math.sin(A.a);
+  const cb = Math.cos(B.a), sb = Math.sin(B.a);
+  return [[0, 0, 1], [ca, sa, 0], [-sa, ca, 0], [cb, sb, 0], [-sb, cb, 0]];
+}
+function sepOrder(A, B){
+  const E = 1e-9;
+  for (const n of sepAxes(A, B)){
+    const a = projInt(A, n), b = projInt(B, n);
+    let sign = 0;
+    if (a[1] <= b[0] + E) sign = 1;
+    else if (b[1] <= a[0] + E) sign = -1;
+    else continue;
+    const d = n[0] * RAY[0] + n[1] * RAY[1] + n[2] * RAY[2];
+    if (d > E) return sign;
+    if (d < -E) return -sign;
+  }
+  return 0;
+}
+function screenAABB(p, cs){
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of cs) for (const z of [p.z0, p.z1]){
+    const a = SX(q[0], q[1]), b = SY(q[0], q[1], z);
+    if (a < x0) x0 = a; if (a > x1) x1 = a;
+    if (b < y0) y0 = b; if (b > y1) y1 = b;
+  }
+  return [x0, y0, x1, y1];
+}
+
+let orderCycles = 0;
+function orderParts(ps){
+  const n = ps.length, E = 1e-9;
+  for (const p of ps){
+    const cs = cornersOf(p);
+    p.cs = cs;
+    let lo = Infinity, hi = -Infinity;
+    for (const q of cs){ const d = q[0] + q[1]; if (d < lo) lo = d; if (d > hi) hi = d; }
+    p.dLo = lo; p.dHi = hi;
+    p.key = (lo + hi) / 2 + 1.282 * (p.z0 + p.z1) / 2;
+    p.bb = screenAABB(p, cs);
+  }
+  const adj = [], indeg = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) adj.push([]);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++){
+    const a = ps[i], b = ps[j];
+    if (a.bb[2] <= b.bb[0] || b.bb[2] <= a.bb[0] ||
+        a.bb[3] <= b.bb[1] || b.bb[3] <= a.bb[1]) continue;
+    const ord = sepOrder(a, b);
+    if (ord === 0) continue;
+    const first = ord > 0 ? i : j;
+    const last = first === i ? j : i;
+    adj[first].push(last); indeg[last]++;
+  }
+  const ready = [], out = [], done = new Array(n).fill(false);
+  for (let i = 0; i < n; i++) if (!indeg[i]) ready.push(i);
+  while (ready.length){
+    let bi = 0;
+    for (let k = 1; k < ready.length; k++)
+      if (ps[ready[k]].key < ps[ready[bi]].key) bi = k;
+    const i = ready.splice(bi, 1)[0];
+    out.push(ps[i]); done[i] = true;
+    for (const j of adj[i]) if (--indeg[j] === 0) ready.push(j);
+  }
+  if (out.length < n){
+    orderCycles++;
+    const rest = [];
+    for (let i = 0; i < n; i++) if (!done[i]) rest.push(ps[i]);
+    rest.sort(function(a, b){ return a.key - b.key; });
+    for (const q of rest) out.push(q);
+  }
+  return out;
+}
+
+function SX(x, y){ return (x - y) * K + cv.width / (2 * dpr()) + panX; }
+function SY(x, y, z){ return (x + y) * K * 0.5 + cv.height / (2 * dpr()) * 1.12 + panY
+                             - z * K * 0.78; }
+function dpr(){ return Math.min(2, window.devicePixelRatio || 1); }
+
+function cornersOf(p){
+  const c = Math.cos(p.a), s = Math.sin(p.a), hl = p.L / 2, hw = p.W / 2;
+  return [[hl,hw],[hl,-hw],[-hl,-hw],[-hl,hw]].map(function(q){
+    return [p.x + q[0] * c - q[1] * s, p.y + q[0] * s + q[1] * c]; });
+}
+
+const SIDE = ['fwd','rgt','aft','lft'];
+function sideName(i, flip){
+  const n = SIDE[i];
+  if (!flip) return n;
+  return n === 'lft' ? 'rgt' : n === 'rgt' ? 'lft' : n;
+}
+
+function needsFull(b){
+  if (b.mesh) return true;
+  if (isNone(b.col) || hasAlpha(b.col)) return true;
+  for (const fc of FACES){ const c = b[fc]; if (c && (isNone(c) || hasAlpha(c))) return true; }
+  return false;
+}
+
+function quadOf(a, b, z0, z1){
+  return [[SX(a[0],a[1]), SY(a[0],a[1],z0)], [SX(b[0],b[1]), SY(b[0],b[1],z0)],
+          [SX(b[0],b[1]), SY(b[0],b[1],z1)], [SX(a[0],a[1]), SY(a[0],a[1],z1)]];
+}
+function fillQuad(q, style){
+  if (!style) return;
+  g2.fillStyle = style; g2.beginPath(); g2.moveTo(q[0][0], q[0][1]);
+  for (let i = 1; i < q.length; i++) g2.lineTo(q[i][0], q[i][1]);
+  g2.fill();
+}
+function lerp(a, b, t){ return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+function wires(q, nu, nv, style, lw){
+  if (!style) return;
+  g2.strokeStyle = style; g2.lineWidth = lw; g2.beginPath();
+  for (let i = 0; i <= nu; i++){ const t = i / nu;
+    const a = lerp(q[0], q[3], t), b = lerp(q[1], q[2], t);
+    g2.moveTo(a[0], a[1]); g2.lineTo(b[0], b[1]); }
+  for (let j = 0; j <= nv; j++){ const t = j / nv;
+    const a = lerp(q[0], q[1], t), b = lerp(q[3], q[2], t);
+    g2.moveTo(a[0], a[1]); g2.lineTo(b[0], b[1]); }
+  g2.stroke();
+}
+
+function drawPart(p, capture){
+  const b = p.b, pts = cornersOf(p), dc = p.x + p.y, full = needsFull(b);
+  const lw = Math.max(0.7, K * 0.016);
+  const sides = [];
+  for (let i = 0; i < 4; i++){
+    const a = pts[i], c = pts[(i + 1) % 4];
+    const md = ((a[0] + c[0]) + (a[1] + c[1])) / 2;
+    const near = md > dc;
+    const fc = sideName(i, p.flip);
+    const lit = Math.abs(a[0] - c[0]) > Math.abs(a[1] - c[1]) ? 0 : 1;
+    sides.push({ d:md, near:near, fc:fc, lit:lit, a:a, c:c,
+                 len:Math.hypot(c[0] - a[0], c[1] - a[1]) });
+  }
+  const topQ = pts.map(function(q){ return [SX(q[0],q[1]), SY(q[0],q[1],p.z1)]; });
+  const botQ = pts.map(function(q){ return [SX(q[0],q[1]), SY(q[0],q[1],p.z0)]; });
+
+  function paintSide(s){
+    const col = faceCol(b, s.fc);
+    if (isNone(col)) return;
+    const q = quadOf(s.a, s.c, p.z0, p.z1);
+    const f = s.near ? (s.lit ? 0.46 : 0.62) : (s.lit ? 0.24 : 0.30);
+    if (b.mesh){
+      wires(q, Math.max(2, Math.min(18, Math.round((p.z1 - p.z0) / b.mesh))),
+               Math.max(2, Math.min(24, Math.round(s.len / b.mesh))),
+               shade(col, s.near ? (s.lit ? 0.74 : 0.98) : 0.36), lw);
+    } else fillQuad(q, shade(col, f));
+    if (capture) pickList.push({ q:q, i:p.i, fc:s.fc, part:p });
+  }
+
+  if (full){
+    sides.sort(function(a, c){ return a.d - c.d; });
+    const bc = faceCol(b, 'bot');
+    if (!isNone(bc) && !b.mesh) fillQuad(botQ, shade(bc, 0.36));
+    for (const s of sides) paintSide(s);
+    const tc = faceCol(b, 'top');
+    if (!isNone(tc)){
+      if (b.mesh) wires(topQ, Math.max(2, Math.min(24, Math.round(b.W / b.mesh))),
+                              Math.max(2, Math.min(24, Math.round(b.L / b.mesh))),
+                              shade(tc, 1), lw);
+      else { fillQuad(topQ, shade(tc, 1));
+             if (capture) pickList.push({ q:topQ, i:p.i, fc:'top', part:p }); }
+    }
+  } else {
+    for (const s of sides) if (s.near) paintSide(s);
+    const tc = faceCol(b, 'top');
+    if (!isNone(tc)){ fillQuad(topQ, shade(tc, 1));
+      if (capture) pickList.push({ q:topQ, i:p.i, fc:'top', part:p }); }
+  }
+
+  if (b.roof){
+    const c = Math.cos(p.a), s = Math.sin(p.a), hl = b.L * b.roof / 2, hw = b.W * 0.78 / 2;
+    const q = [[hl,hw],[hl,-hw],[-hl,-hw],[-hl,hw]].map(function(o){
+      const wx = p.x + o[0] * c - o[1] * s, wy = p.y + o[0] * s + o[1] * c;
+      return [SX(wx, wy), SY(wx, wy, p.z1)]; });
+    fillQuad(q, b.glass ? shade(b.glass, 1) : 'rgba(22,26,30,0.72)');
+  }
+}
+
+function faceQuad(p, fc){
+  const pts = cornersOf(p);
+  if (fc === 'top' || fc === 'bot'){
+    const z = fc === 'top' ? p.z1 : p.z0;
+    return pts.map(function(q){ return [SX(q[0],q[1]), SY(q[0],q[1],z)]; });
+  }
+  for (let i = 0; i < 4; i++){
+    if (sideName(i, p.flip) !== fc) continue;
+    return quadOf(pts[i], pts[(i + 1) % 4], p.z0, p.z1);
+  }
+  return null;
+}
+function highlightFace(p, fc){
+  const pts = cornersOf(p), dc = p.x + p.y;
+  if (fc !== 'top' && fc !== 'bot'){
+    let vis = false;
+    for (let i = 0; i < 4; i++){
+      if (sideName(i, p.flip) !== fc) continue;
+      const a = pts[i], b = pts[(i + 1) % 4];
+      vis = ((a[0] + b[0]) + (a[1] + b[1])) / 2 > dc;
+    }
+    if (!vis) return;
+  }
+  const q = faceQuad(p, fc);
+  if (!q) return;
+  fillQuad(q, 'rgba(226,168,74,0.26)');
+  g2.strokeStyle = 'rgba(243,200,116,1)'; g2.lineWidth = 1.7;
+  g2.beginPath(); g2.moveTo(q[0][0], q[0][1]);
+  for (let i = 1; i < q.length; i++) g2.lineTo(q[i][0], q[i][1]);
+  g2.closePath(); g2.stroke();
+}
+
+function outline(p, col, lw){
+  const pts = cornersOf(p), dc = p.x + p.y;
+  g2.strokeStyle = col || 'rgba(226,168,74,0.95)'; g2.lineWidth = lw || 1.2;
+  g2.beginPath();
+  for (let i = 0; i < 4; i++){
+    const a = pts[i], b = pts[(i + 1) % 4];
+    if (((a[0] + b[0]) + (a[1] + b[1])) / 2 <= dc) continue;
+    g2.moveTo(SX(a[0],a[1]), SY(a[0],a[1],p.z0));
+    g2.lineTo(SX(b[0],b[1]), SY(b[0],b[1],p.z0));
+    g2.lineTo(SX(b[0],b[1]), SY(b[0],b[1],p.z1));
+    g2.lineTo(SX(a[0],a[1]), SY(a[0],a[1],p.z1));
+    g2.closePath();
+  }
+  g2.moveTo(SX(pts[0][0],pts[0][1]), SY(pts[0][0],pts[0][1],p.z1));
+  for (let i = 1; i < 4; i++)
+    g2.lineTo(SX(pts[i][0],pts[i][1]), SY(pts[i][0],pts[i][1],p.z1));
+  g2.closePath();
+  g2.stroke();
+}
+
+function buildGround(){
+  const G = GROUND[bgI], w = cv.width, h = cv.height;
+  if (w <= 0 || h <= 0){ groundTex = null; return; }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'), img = x.createImageData(w, h), d = img.data;
+  for (let i = 0; i < w * h; i++){
+    const nz = (Math.random() - 0.5) * G.v, o = i * 4;
+    d[o]     = Math.max(0, Math.min(255, G.c[0] + nz));
+    d[o + 1] = Math.max(0, Math.min(255, G.c[1] + nz * (G.g || 1)));
+    d[o + 2] = Math.max(0, Math.min(255, G.c[2] + nz));
+    d[o + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  groundTex = c;
+}
+function drawGrid(){
+  const n = 6;
+  g2.strokeStyle = lightGround() ? 'rgba(18,22,26,0.17)' : 'rgba(120,134,144,0.13)';
+  g2.lineWidth = 1;
+  g2.beginPath();
+  for (let i = -n; i <= n; i++){
+    g2.moveTo(SX(i, -n), SY(i, -n, 0)); g2.lineTo(SX(i, n), SY(i, n, 0));
+    g2.moveTo(SX(-n, i), SY(-n, i, 0)); g2.lineTo(SX(n, i), SY(n, i, 0));
+  }
+  g2.stroke();
+  g2.strokeStyle = lightGround() ? 'rgba(24,62,86,0.6)' : 'rgba(77,127,150,0.5)';
+  g2.beginPath();
+  g2.moveTo(SX(0, 0), SY(0, 0, 0)); g2.lineTo(SX(1.4, 0), SY(1.4, 0, 0));
+  g2.stroke();
+}
+
+function drawRef(){
+  const h = 1.75, L = 0.30, W = 0.45, x = 1.6, y = -1.6;
+  g2.strokeStyle = lightGround() ? 'rgba(20,58,82,0.5)' : 'rgba(143,195,216,0.45)';
+  g2.lineWidth = 1;
+  const pts = [[L/2,W/2],[L/2,-W/2],[-L/2,-W/2],[-L/2,W/2]].map(function(o){
+    return [x + o[0], y + o[1]]; });
+  g2.beginPath();
+  for (const z of [0, h]) for (let i = 0; i < 4; i++){
+    const a = pts[i], b = pts[(i + 1) % 4];
+    g2.moveTo(SX(a[0],a[1]), SY(a[0],a[1],z)); g2.lineTo(SX(b[0],b[1]), SY(b[0],b[1],z));
+  }
+  for (const a of pts){
+    g2.moveTo(SX(a[0],a[1]), SY(a[0],a[1],0)); g2.lineTo(SX(a[0],a[1]), SY(a[0],a[1],h));
+  }
+  g2.stroke();
+  g2.fillStyle = lightGround() ? 'rgba(18,50,72,0.85)' : 'rgba(143,195,216,0.7)';
+  g2.font = '11px ui-monospace,monospace';
+  g2.fillText('1.75 m', SX(pts[0][0], pts[0][1]) + 6, SY(pts[0][0], pts[0][1], h));
+}
+
+function render(){
+  const d = dpr();
+  g2.setTransform(1, 0, 0, 1, 0, 0);
+  if (groundTex) g2.drawImage(groundTex, 0, 0);
+  else { const c = GROUND[bgI].c;
+    g2.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+    g2.fillRect(0, 0, cv.width, cv.height); }
+  g2.setTransform(d, 0, 0, d, 0, 0);
+  if (grid) drawGrid();
+  if (ref) drawRef();
+  pickList = [];
+  const sp = sprite();
+  if (ghost && sp){
+    g2.globalAlpha = 0.16;
+    for (let i = 0; i < sp.states.length; i++){
+      if (i === stI) continue;
+      for (const p of orderParts(makeParts(sp.states[i].boxes, camA))) drawPart(p, false);
+    }
+    g2.globalAlpha = 1;
+  }
+  const parts = orderParts(makeParts(boxes(), camA));
+  for (const p of parts){
+    drawPart(p, true);
+    const cl = showClash ? CLASH.get(p.i) : null;
+    if (cl) outline(p, cl.ratio > BURY_BAD ? 'rgba(232,82,63,0.95)'
+                                           : 'rgba(226,168,74,0.55)', 1.4);
+    else if (showClash && INTER.has(p.i)) outline(p, 'rgba(77,127,150,0.7)', 1.3);
+    if (p.i === bxI){ outline(p); if (faceSel) highlightFace(p, faceSel); }
+  }
+  const b = cur();
+  let yaw = (camA * 180 / Math.PI) % 360; if (yaw < 0) yaw += 360;
+  document.getElementById('hud').textContent =
+    (sp ? sp.name : '-') + ' / ' + (state() ? state().name : '-') + '  ·  ' +
+    boxes().length + ' boxes  ·  yaw ' + yaw.toFixed(0) + '°' +
+    (b ? '  ·  ' + (b.n || 'box ' + bxI) : '') +
+    (faceSel ? '  ·  face ' + faceSel : '') +
+    (axisLock ? '  ·  ' + axisLock + ' axis' : '');
+  if (emptyDoc()) document.getElementById('hud').textContent =
+    'empty — import or merge a .sprite.txt file, or add a box';
+}
+
+function inPoly(q, x, y){
+  let inside = false;
+  for (let i = 0, j = q.length - 1; i < q.length; j = i++){
+    const xi = q[i][0], yi = q[i][1], xj = q[j][0], yj = q[j][1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function resize(){
+  const d = dpr(), w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+  buildGround();
+  render();
+}
+
+const UNDO = [], REDO = [];
+function snap(){
+  UNDO.push(JSON.stringify({ d:DOC, s:spI, t:stI, b:bxI }));
+  if (UNDO.length > 80) UNDO.shift();
+  REDO.length = 0;
+}
+function restore(src, dst){
+  if (!src.length) return;
+  dst.push(JSON.stringify({ d:DOC, s:spI, t:stI, b:bxI }));
+  const o = JSON.parse(src.pop());
+  DOC = o.d; spI = o.s; stI = o.t; bxI = o.b;
+  rebuild();
+}
+
+function instExtents(b, mirrored){
+  const r = b.rot || 0, c = Math.abs(Math.cos(r)), si = Math.abs(Math.sin(r));
+  const hf = (b.L * c + b.W * si) / 2, hl = (b.L * si + b.W * c) / 2;
+  const l = mirrored ? -b.l : b.l;
+  return { f0:b.f - hf, f1:b.f + hf, l0:l - hl, l1:l + hl, z0:b.z, z1:b.z + b.H,
+           vol:Math.max(1e-9, b.L * b.W * b.H) };
+}
+function interVol(a, b){
+  const df = Math.min(a.f1, b.f1) - Math.max(a.f0, b.f0);
+  const dl = Math.min(a.l1, b.l1) - Math.max(a.l0, b.l0);
+  const dz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
+  if (df <= 0 || dl <= 0 || dz <= 0) return 0;
+  return df * dl * dz;
+}
+function instancesOf(bs){
+  const out = [];
+  bs.forEach(function(b, i){
+    out.push({ i:i, e:instExtents(b, false) });
+    if (b.mir) out.push({ i:i, e:instExtents(b, true) });
+  });
+  return out;
+}
+const SEE_FACES = ['top','fwd','aft','lft','rgt'];
+function seeThrough(b){
+  if (b.mesh) return true;
+  if (isNone(b.col) || hasAlpha(b.col)) return true;
+  for (const fc of SEE_FACES){
+    const c = b[fc];
+    if (c && (isNone(c) || hasAlpha(c))) return true;
+  }
+  return false;
+}
+function spriteCorners(b, mir){
+  const r = (b.rot || 0) * (mir ? -1 : 1);
+  const c = Math.cos(r), si = Math.sin(r);
+  const l = mir ? -b.l : b.l, hl = b.L / 2, hw = b.W / 2, out = [];
+  for (const q of [[hl,hw],[hl,-hw],[-hl,-hw],[-hl,hw]])
+    out.push([b.f + q[0] * c - q[1] * si, l + q[0] * si + q[1] * c]);
+  return out;
+}
+function projSprite(b, mir, n){
+  const cs = spriteCorners(b, mir);
+  let lo = Infinity, hi = -Infinity;
+  for (const q of cs){
+    const xy = q[0] * n[0] + q[1] * n[1];
+    for (const z of [b.z, b.z + b.H]){
+      const d = xy + z * n[2];
+      if (d < lo) lo = d;
+      if (d > hi) hi = d;
+    }
+  }
+  return [lo, hi];
+}
+function interpenetrates(bA, mA, bB, mB){
+  const ra = (bA.rot || 0) * (mA ? -1 : 1), rb = (bB.rot || 0) * (mB ? -1 : 1);
+  const axes = [[0,0,1], [Math.cos(ra), Math.sin(ra), 0], [-Math.sin(ra), Math.cos(ra), 0],
+                [Math.cos(rb), Math.sin(rb), 0], [-Math.sin(rb), Math.cos(rb), 0]];
+  const E = 1e-9;
+  for (const n of axes){
+    const a = projSprite(bA, mA, n), b = projSprite(bB, mB, n);
+    if (a[1] <= b[0] + E || b[1] <= a[0] + E) return false;
+  }
+  return true;
+}
+function computeInter(bs){
+  const inst = [];
+  bs.forEach(function(b, i){
+    inst.push({ i:i, b:b, m:false });
+    if (b.mir) inst.push({ i:i, b:b, m:true });
+  });
+  const out = new Map();
+  for (let a = 0; a < inst.length; a++) for (let b = a + 1; b < inst.length; b++){
+    const A = inst[a], B = inst[b];
+    if (A.i === B.i) continue;
+    if (!interpenetrates(A.b, A.m, B.b, B.m)) continue;
+    if (!out.has(A.i)) out.set(A.i, B.i);
+    if (!out.has(B.i)) out.set(B.i, A.i);
+  }
+  return out;
+}
+function buriedIn(inner, outer){
+  const v = interVol(inner.e, outer.e);
+  return v <= 0 ? 0 : v / inner.e.vol;
+}
+function computeClash(bs){
+  const inst = instancesOf(bs), out = new Map();
+  for (const A of inst) for (const B of inst){
+    if (A === B || A.i === B.i) continue;
+    if (seeThrough(bs[B.i])) continue;
+    const r = buriedIn(A, B);
+    if (r < BURY_WARN) continue;
+    const prev = out.get(A.i);
+    if (!prev || r > prev.ratio) out.set(A.i, { ratio:r, other:B.i });
+  }
+  return out;
+}
+function burialRiskFor(bs, idx){
+  const inst = instancesOf(bs);
+  let worst = 0;
+  for (const A of inst) for (const B of inst){
+    if (A === B || A.i === B.i) continue;
+    if (A.i !== idx && B.i !== idx) continue;
+    if (seeThrough(bs[B.i])) continue;
+    const r = buriedIn(A, B);
+    if (r > worst) worst = r;
+  }
+  return worst;
+}
+
+const $ = function(id){ return document.getElementById(id); };
+
+function buildSprites(){
+  const s = $('spSel'); s.innerHTML = '';
+  DOC.sprites.forEach(function(sp, i){
+    const o = document.createElement('option');
+    o.value = i; o.textContent = sp.name; s.appendChild(o);
+  });
+  s.value = spI;
+}
+function buildStates(){
+  const w = $('stTabs'); w.innerHTML = '';
+  const sp = sprite(); if (!sp) return;
+  sp.states.forEach(function(st, i){
+    const d = document.createElement('div');
+    d.className = 'tab' + (i === stI ? ' on' : ''); d.textContent = st.name;
+    d.onclick = function(){ stI = i; bxI = boxes().length ? 0 : -1; rebuild(); };
+    w.appendChild(d);
+  });
+}
+function buildList(){
+  const w = $('bxList'); w.innerHTML = '';
+  boxes().forEach(function(b, i){
+    const r = document.createElement('div');
+    r.className = 'row' + (i === bxI ? ' on' : '');
+    const c = document.createElement('div');
+    c.className = 'chip' + (isNone(b.col) ? ' nil' : '');
+    if (!isNone(b.col)) c.style.background = b.col;
+    const nm = document.createElement('span'); nm.className = 'nm';
+    nm.textContent = (b.n || 'box ' + i) + (b.mir ? ' ×2' : '');
+    const dm = document.createElement('span'); dm.className = 'dm';
+    dm.textContent = b.L.toFixed(2) + '×' + b.W.toFixed(2) + '×' + b.H.toFixed(2);
+    const dot = document.createElement('div');
+    const cl = CLASH.get(i), ip = INTER.get(i);
+    dot.className = 'dot' + (cl ? (cl.ratio > BURY_BAD ? ' b' : ' w')
+                                : (showClash && ip !== undefined ? ' x' : ''));
+    if (!cl && showClash && ip !== undefined)
+      dot.title = 'interpenetrates ' + (boxes()[ip].n || 'box ' + ip) +
+        ' \u2014 no separating axis, so draw order is ambiguous where they cross';
+    if (cl) dot.title = Math.round(cl.ratio * 100) + '% of this box is inside ' +
+      (boxes()[cl.other].n || 'box ' + cl.other) + ', which is opaque' +
+      (cl.ratio > BURY_BAD ? ' — none of it can ever be seen' : '');
+    r.appendChild(c); r.appendChild(nm); r.appendChild(dm); r.appendChild(dot);
+    r.onclick = function(){ bxI = i; rebuild(); };
+    w.appendChild(r);
+  });
+}
+function buildPal(){
+  const seen = DEFAULT_PAL.slice(), w = $('pal');
+  for (const sp of DOC.sprites) for (const st of sp.states) for (const b of st.boxes){
+    for (const c of [b.col].concat(FACES.map(function(f){ return b[f]; })))
+      if (c && !isNone(c) && seen.indexOf(c) < 0) seen.push(c);
+  }
+  w.innerHTML = '';
+  seen.slice(0, 60).forEach(function(c){
+    const d = document.createElement('div'); d.className = 'sw';
+    d.style.background = c; d.title = c;
+    d.onclick = function(){ const b = cur(); if (!b) return;
+      snap(); b.col = c; rebuild(); };
+    w.appendChild(d);
+  });
+}
+function buildFaces(){
+  const w = $('faces'); w.innerHTML = '';
+  const b = cur(); if (!b) return;
+  for (const fc of FACES){
+    const row = document.createElement('div'); row.className = 'face';
+    const lab = document.createElement('b'); lab.textContent = fc;
+    const sel = document.createElement('select');
+    for (const m of ['inherit','colour','none']){
+      const o = document.createElement('option'); o.value = m; o.textContent = m;
+      sel.appendChild(o);
+    }
+    const v = b[fc];
+    sel.value = !v ? 'inherit' : isNone(v) ? 'none' : 'colour';
+    const ci = document.createElement('input'); ci.type = 'color';
+    ci.value = (v && !isNone(v)) ? v.slice(0,7) : b.col.slice(0,7);
+    const ai = document.createElement('input'); ai.type = 'number';
+    ai.min = 0; ai.max = 100; ai.step = 1;
+    ai.value = (v && !isNone(v) && v.length === 9)
+      ? Math.round(parseInt(v.slice(7,9),16) / 255 * 100) : 100;
+    const write = function(){
+      snap();
+      if (sel.value === 'inherit') b[fc] = '';
+      else if (sel.value === 'none') b[fc] = 'none';
+      else {
+        const a = Math.max(0, Math.min(100, Number(ai.value) || 0));
+        b[fc] = ci.value + (a >= 100 ? '' :
+          ('0' + Math.round(a / 100 * 255).toString(16)).slice(-2));
+      }
+      rebuild();
+    };
+    sel.onchange = write; ci.oninput = write; ai.onchange = write;
+    ci.disabled = ai.disabled = sel.value !== 'colour';
+    row.appendChild(lab); row.appendChild(sel); row.appendChild(ci); row.appendChild(ai);
+    if (fc === faceSel) row.style.outline = '1px solid #4d7f96';
+    row.onmousedown = function(){ faceSel = fc; render(); };
+    w.appendChild(row);
+  }
+}
+function buildProps(){
+  const b = cur(), on = !!b;
+  for (const id of ['bn','pf','pl','pz','sL','sW','sH','rot','roof','mesh','col','alp','mir','bd'])
+    $(id).disabled = !on;
+  if (!on) return;
+  $('bn').value = b.n; $('pf').value = b.f; $('pl').value = b.l; $('pz').value = b.z;
+  $('sL').value = b.L; $('sW').value = b.W; $('sH').value = b.H;
+  $('rot').value = b.rot; $('roof').value = b.roof; $('mesh').value = b.mesh;
+  $('mir').checked = !!b.mir;
+  $('bd').value = b.d || 1;
+  $('col').value = isNone(b.col) ? '#000000' : b.col.slice(0,7);
+  $('alp').value = b.col.length === 9 ? Math.round(parseInt(b.col.slice(7,9),16)/255*100) : 100;
+}
+function rebuild(){
+  CLASH = computeClash(boxes());
+  INTER = computeInter(boxes());
+  buildSprites(); buildStates(); buildList(); buildProps(); buildFaces(); buildPal();
+  buildScale(); buildMass();
+  let bad = 0; CLASH.forEach(function(v){ if (v.ratio > BURY_BAD) bad++; });
+  $('stat').textContent = DOC.sprites.length + ' sprites' +
+    (CLASH.size ? '  ·  ' + CLASH.size + ' hidden' +
+      (bad ? ', ' + bad + ' fully buried' : '') : '') +
+    (showClash && INTER.size ? '  ·  ' + INTER.size + ' interpenetrating' : '');
+  render();
+}
+
+function bindNum(id, get, set){
+  const el = $(id);
+  el.onchange = function(){
+    const b = cur(); if (!b) return;
+    const v = Number(el.value);
+    if (!isFinite(v)){ el.value = get(b); return; }
+    snap(); set(b, v); rebuild();
+  };
+  const lab = el.previousElementSibling;
+  if (lab && lab.tagName === 'LABEL') scrub(lab, id, get, set);
+}
+function scrub(lab, id, get, set){
+  lab.onmousedown = function(e){
+    const b = cur(); if (!b) return;
+    e.preventDefault();
+    const x0 = e.clientX, v0 = get(b);
+    snap();
+    const mv = function(ev){ set(b, v0 + (ev.clientX - x0) * 0.01); buildProps(); render(); };
+    const up = function(){ window.removeEventListener('mousemove', mv);
+      window.removeEventListener('mouseup', up); rebuild(); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+  };
+}
+bindNum('pf', function(b){ return b.f; }, function(b,v){ b.f = v; });
+bindNum('pl', function(b){ return b.l; }, function(b,v){ b.l = v; });
+bindNum('pz', function(b){ return b.z; }, function(b,v){ b.z = v; });
+bindNum('sL', function(b){ return b.L; }, function(b,v){ b.L = Math.max(0, v); });
+bindNum('sW', function(b){ return b.W; }, function(b,v){ b.W = Math.max(0, v); });
+bindNum('sH', function(b){ return b.H; }, function(b,v){ b.H = Math.max(0, v); });
+bindNum('rot', function(b){ return b.rot; }, function(b,v){ b.rot = v; });
+bindNum('roof', function(b){ return b.roof; },
+  function(b,v){ b.roof = Math.max(0, Math.min(1, v)); });
+bindNum('mesh', function(b){ return b.mesh; }, function(b,v){ b.mesh = Math.max(0, v); });
+bindNum('bd', function(b){ return b.d || 1; },
+  function(b,v){ b.d = Math.max(0.01, v); });
+scrub($('rotLab'), 'rot', function(b){ return b.rot; }, function(b,v){ b.rot = v; });
+scrub($('roofLab'), 'roof', function(b){ return b.roof; },
+  function(b,v){ b.roof = Math.max(0, Math.min(1, v)); });
+scrub($('meshLab'), 'mesh', function(b){ return b.mesh; },
+  function(b,v){ b.mesh = Math.max(0, v); });
+
+$('bn').onchange = function(){ const b = cur(); if (!b) return;
+  snap(); b.n = $('bn').value.replace(/\s+/g, '.'); rebuild(); };
+$('mir').onchange = function(){ const b = cur(); if (!b) return;
+  snap(); b.mir = $('mir').checked ? 1 : 0; rebuild(); };
+function writeBase(){
+  const b = cur(); if (!b) return;
+  const a = Math.max(0, Math.min(100, Number($('alp').value) || 0));
+  snap();
+  b.col = $('col').value + (a >= 100 ? '' :
+    ('0' + Math.round(a / 100 * 255).toString(16)).slice(-2));
+  rebuild();
+}
+$('col').oninput = writeBase; $('alp').onchange = writeBase;
+
+$('bxAdd').onclick = function(){
+  const st = state(); if (!st) return;
+  snap();
+  const b = { f:0, l:0, z:0, L:0.3, W:0.3, H:0.3,
+              col:(cur() ? cur().col : '#8e9398'), n:'', mir:0, rot:0, roof:0, glass:'',
+              mesh:0, d:1 };
+  for (const fc of FACES) b[fc] = '';
+  st.boxes.push(b); bxI = st.boxes.length - 1; rebuild();
+};
+$('bxDup').onclick = function(){
+  const b = cur(), st = state(); if (!b) return;
+  snap();
+  const c = JSON.parse(JSON.stringify(b)); c.z += b.H;
+  st.boxes.splice(bxI + 1, 0, c); bxI++; rebuild();
+};
+$('bxDel').onclick = function(){
+  const st = state(); if (!st || bxI < 0) return;
+  snap(); st.boxes.splice(bxI, 1);
+  bxI = Math.min(bxI, st.boxes.length - 1); rebuild();
+};
+
+function ask(msg, def){ const v = window.prompt(msg, def);
+  return v === null ? null : v.trim().replace(/\s+/g, '-'); }
+$('spAdd').onclick = function(){ const n = ask('new sprite name', 'untitled'); if (!n) return;
+  snap(); DOC.sprites.push({ name:n, mass:0, states:[{ name:'idle', boxes:[] }] });
+  spI = DOC.sprites.length - 1; stI = 0; bxI = -1; rebuild(); };
+$('spDup').onclick = function(){ const n = ask('copy name', sprite().name + '-copy'); if (!n) return;
+  snap(); const c = JSON.parse(JSON.stringify(sprite())); c.name = n;
+  DOC.sprites.splice(spI + 1, 0, c); spI++; rebuild(); };
+$('spRen').onclick = function(){ const n = ask('rename sprite', sprite().name); if (!n) return;
+  snap(); sprite().name = n; rebuild(); };
+$('spDel').onclick = function(){
+  if (DOC.sprites.length < 2){ alert('keep at least one sprite'); return; }
+  if (!confirm('delete sprite "' + sprite().name + '"?')) return;
+  snap(); DOC.sprites.splice(spI, 1); spI = Math.max(0, spI - 1); stI = 0; bxI = -1; rebuild(); };
+$('spMass').onchange = function(){
+  const sp = sprite(); if (!sp) return;
+  const v = Number(this.value);
+  if (this.value !== '' && (!isFinite(v) || v < 0)){
+    $('scErr').textContent = 'mass must be a number in kg, or blank';
+    $('scErr').hidden = false; this.value = sp.mass > 0 ? sp.mass : ''; return;
+  }
+  $('scErr').hidden = true;
+  snap(); sp.mass = this.value === '' ? 0 : v; rebuild();
+};
+$('scGo').onclick = function(){ applyScale(Number($('scK').value), 'scaled'); };
+$('scFit').onclick = function(){
+  const sp = sprite(), bd = sp ? spriteBounds(sp) : null;
+  const want = Number($('scH').value);
+  if (!bd || bd.H <= 0) return;
+  if (!isFinite(want) || want <= 0){
+    $('scErr').textContent = 'enter a target height in metres';
+    $('scErr').hidden = false; return;
+  }
+  applyScale(want / bd.H, 'fitted to ' + want + ' m,');
+};
+$('gndGo').onclick = function(){
+  const sp = sprite(); if (!sp) return;
+  const bd = spriteBounds(sp);
+  if (!bd){ return; }
+  if (Math.abs(bd.z0) < 1e-9){
+    $('scErr').textContent = 'already sitting on z=0';
+    $('scErr').hidden = false; return;
+  }
+  $('scErr').hidden = true;
+  snap();
+  const shift = groundSprite(sp);
+  rebuild();
+  $('stat').textContent = 'grounded ' + sp.name + ', moved ' +
+    (shift > 0 ? 'down ' : 'up ') + Math.abs(r3(shift)) + ' m';
+};
+$('scK').onkeydown = function(e){ if (e.key === 'Enter') $('scGo').onclick(); };
+$('scH').onkeydown = function(e){ if (e.key === 'Enter') $('scFit').onclick(); };
+$('scK').oninput = function(){ $('scErr').hidden = true; };
+$('scH').oninput = function(){ $('scErr').hidden = true; };
+$('spSel').onchange = function(){ spI = Number($('spSel').value); stI = 0;
+  bxI = boxes().length ? 0 : -1; rebuild(); };
+
+$('stAdd').onclick = function(){ const n = ask('new state name', 'state'); if (!n) return;
+  snap(); sprite().states.push({ name:n, boxes:[] });
+  stI = sprite().states.length - 1; bxI = -1; rebuild(); };
+$('stDup').onclick = function(){ const n = ask('copy name', state().name + '-copy'); if (!n) return;
+  snap(); const c = JSON.parse(JSON.stringify(state())); c.name = n;
+  sprite().states.splice(stI + 1, 0, c); stI++; rebuild(); };
+$('stRen').onclick = function(){ const n = ask('rename state', state().name); if (!n) return;
+  snap(); state().name = n; rebuild(); };
+$('stDel').onclick = function(){
+  if (sprite().states.length < 2){ alert('keep at least one state'); return; }
+  if (!confirm('delete state "' + state().name + '"?')) return;
+  snap(); sprite().states.splice(stI, 1); stI = Math.max(0, stI - 1); bxI = -1; rebuild(); };
+
+$('spinB').onclick = function(){ spin = !spin; this.classList.toggle('on', spin); };
+$('gridB').onclick = function(){ grid = !grid; this.classList.toggle('on', grid); render(); };
+$('ghostB').onclick = function(){ ghost = !ghost; this.classList.toggle('on', ghost); render(); };
+$('refB').onclick = function(){ ref = !ref; this.classList.toggle('on', ref); render(); };
+$('fit').onclick = function(){ K = 46; panX = 0; panY = 0; render(); };
+GROUND.forEach(function(g, i){
+  const o = document.createElement('option');
+  o.value = i; o.textContent = g.n; $('bgSel').appendChild(o);
+});
+$('bgSel').value = bgI;
+$('bgSel').onchange = function(){
+  bgI = Number(this.value);
+  document.getElementById('hud').style.color = lightGround() ? '#2c3237' : '#6c7780';
+  buildGround(); render();
+};
+$('clashB').onclick = function(){ showClash = !showClash;
+  this.classList.toggle('on', showClash); rebuild(); };
+$('noclashB').onclick = function(){ noClash = !noClash;
+  this.classList.toggle('on', noClash); };
+
+let fileMode = 'replace';
+$('imp').onclick = function(){ fileMode = 'replace'; $('file').click(); };
+$('mrg').onclick = function(){ fileMode = 'merge'; $('file').click(); };
+$('file').onchange = function(){
+  const f = this.files && this.files[0]; if (!f) return;
+  const mode = fileMode;
+  const r = new FileReader();
+  r.onload = function(){
+    if (mode === 'merge') doMerge(String(r.result), f.name);
+    else load(String(r.result), f.name);
+  };
+  r.readAsText(f); this.value = '';
+};
+function spriteBounds(sp){
+  let f0 = Infinity, f1 = -Infinity, l0 = Infinity, l1 = -Infinity;
+  let z0 = Infinity, z1 = -Infinity, n = 0;
+  for (const st of sp.states) for (const b of st.boxes){
+    for (const m of (b.mir ? [false, true] : [false])){
+      for (const q of spriteCorners(b, m)){
+        if (q[0] < f0) f0 = q[0]; if (q[0] > f1) f1 = q[0];
+        if (q[1] < l0) l0 = q[1]; if (q[1] > l1) l1 = q[1];
+      }
+    }
+    if (b.z < z0) z0 = b.z;
+    if (b.z + b.H > z1) z1 = b.z + b.H;
+    n++;
+  }
+  if (!n) return null;
+  return { L:f1 - f0, W:l1 - l0, H:z1 - z0, z0:z0, boxes:n };
+}
+function r3(v){ return Math.round(v * 1000) / 1000; }
+function scaleSprite(sp, k){
+  for (const st of sp.states) for (const b of st.boxes){
+    b.f = r3(b.f * k); b.l = r3(b.l * k); b.z = r3(b.z * k);
+    b.L = r3(b.L * k); b.W = r3(b.W * k); b.H = r3(b.H * k);
+    if (b.mesh) b.mesh = r3(b.mesh * k);
+  }
+}
+function groundSprite(sp){
+  let zmin = Infinity;
+  for (const st of sp.states) for (const b of st.boxes) if (b.z < zmin) zmin = b.z;
+  if (!isFinite(zmin)) return null;
+  if (Math.abs(zmin) < 1e-9) return 0;
+  for (const st of sp.states) for (const b of st.boxes) b.z = r3(b.z - zmin);
+  return zmin;
+}
+function massModel(sp, st){
+  if (!sp || !st || !st.boxes.length) return null;
+  const inst = [];
+  st.boxes.forEach(function(b, i){
+    const mk = function(m){
+      return { b:b, i:i, m:m, V:b.L * b.W * b.H, d:(b.d || 1),
+               cf:b.f, cl:(m ? -b.l : b.l), cz:b.z + b.H / 2 };
+    };
+    inst.push(mk(false));
+    if (b.mir) inst.push(mk(true));
+  });
+  const eff = inst.map(function(x){ return x.V; });
+  for (let a = 0; a < inst.length; a++) for (let c = a + 1; c < inst.length; c++){
+    const v = interVol(instExtents(inst[a].b, inst[a].m),
+                       instExtents(inst[c].b, inst[c].m));
+    if (v <= 0) continue;
+    eff[a] -= v / 2; eff[c] -= v / 2;
+  }
+  let W = 0, vol = 0, raw = 0;
+  const w = inst.map(function(x, k){
+    const ve = Math.max(x.V * 0.05, eff[k]);
+    vol += ve; raw += x.V;
+    const ww = ve * x.d; W += ww; return ww;
+  });
+  if (W <= 0) return null;
+  const M = sp.mass > 0 ? sp.mass : 0;
+  let cf = 0, cl = 0, cz = 0;
+  inst.forEach(function(x, k){ cf += w[k] * x.cf; cl += w[k] * x.cl; cz += w[k] * x.cz; });
+  cf /= W; cl /= W; cz /= W;
+  let IZ = 0;
+  inst.forEach(function(x, k){
+    const mi = M * w[k] / W;
+    const df = x.cf - cf, dl = x.cl - cl;
+    IZ += mi * ((x.b.L * x.b.L + x.b.W * x.b.W) / 12 + df * df + dl * dl);
+  });
+  return { M:M, cf:cf, cl:cl, cz:cz, IZ:IZ, vol:vol, raw:raw, bodies:inst.length };
+}
+function buildMass(){
+  const sp = sprite();
+  $('spMass').disabled = !sp;
+  $('spMass').value = sp && sp.mass > 0 ? sp.mass : '';
+  const mm = massModel(sp, state());
+  if (!mm){ $('mmOut').textContent = 'no boxes yet'; return; }
+  const ov = mm.raw > 0 ? (1 - mm.vol / mm.raw) * 100 : 0;
+  $('mmOut').innerHTML = mm.M > 0
+    ? 'com f ' + mm.cf.toFixed(3) + ' l ' + mm.cl.toFixed(3) + ' z ' + mm.cz.toFixed(3) +
+      '<br>IZ ' + mm.IZ.toFixed(0) + ' kg m\u00b2 \u00b7 ' + mm.bodies + ' bodies' +
+      '<br>' + mm.vol.toFixed(3) + ' m\u00b3, ' + ov.toFixed(1) + '% overlap removed'
+    : 'com f ' + mm.cf.toFixed(3) + ' z ' + mm.cz.toFixed(3) +
+      '<br>set a mass for IZ';
+}
+function buildScale(){
+  const sp = sprite(), bd = sp ? spriteBounds(sp) : null;
+  $('szOut').textContent = bd
+    ? bd.L.toFixed(2) + ' \u00d7 ' + bd.W.toFixed(2) + ' \u00d7 ' + bd.H.toFixed(2) +
+      ' m, base ' + bd.z0.toFixed(2)
+    : 'no boxes yet';
+  $('scH').value = bd ? bd.H.toFixed(2) : '';
+  $('scK').disabled = $('scGo').disabled = !bd;
+  $('scH').disabled = $('scFit').disabled = !bd || bd.H <= 0;
+  $('gndGo').disabled = !bd;
+  $('gndGo').classList.toggle('on', !!bd && Math.abs(bd.z0) > 1e-9);
+}
+function applyScale(k, why){
+  const sp = sprite();
+  if (!sp) return;
+  if (!isFinite(k) || k <= 0){
+    $('scErr').textContent = 'scale must be a positive number';
+    $('scErr').hidden = false; return;
+  }
+  if (Math.abs(k - 1) < 1e-6){
+    $('scErr').textContent = 'that is no change'; $('scErr').hidden = false; return;
+  }
+  const bd = spriteBounds(sp);
+  if (bd && Math.min(bd.L, bd.W, bd.H) * k < 0.002){
+    $('scErr').textContent = 'too small \u2014 would collapse to under 2 mm';
+    $('scErr').hidden = false; return;
+  }
+  $('scErr').hidden = true;
+  snap();
+  scaleSprite(sp, k);
+  rebuild();
+  $('stat').textContent = why + ' \u00d7' + r3(k) + ' on ' + sp.name +
+    ' (' + sp.states.length + ' state' + (sp.states.length === 1 ? '' : 's') + ')';
+}
+function uniqueName(base){
+  const taken = DOC.sprites.map(function(x){ return x.name; });
+  if (taken.indexOf(base) < 0) return base;
+  let n = 2;
+  while (taken.indexOf(base + '-' + n) >= 0) n++;
+  return base + '-' + n;
+}
+function mergeDoc(inc){
+  const added = [], renamed = [];
+  for (const sp of inc.sprites){
+    const nm = uniqueName(sp.name);
+    if (nm !== sp.name) renamed.push(sp.name + ' as ' + nm);
+    const copy = JSON.parse(JSON.stringify(sp));
+    copy.name = nm;
+    DOC.sprites.push(copy);
+    added.push(nm);
+  }
+  return { added:added, renamed:renamed };
+}
+function emptyDoc(){
+  return DOC.sprites.length === 1 && DOC.sprites[0].states.length === 1 &&
+         DOC.sprites[0].states[0].boxes.length === 0;
+}
+function doMerge(txt, who){
+  const res = parse(txt);
+  if (!res.doc.sprites.length){
+    alert('nothing to merge from ' + (who || 'the text') + '\n\n' +
+      res.errs.slice(0, 8).join('\n'));
+    return false;
+  }
+  snap();
+  const wasEmpty = emptyDoc();
+  const r = mergeDoc(res.doc);
+  if (wasEmpty) DOC.sprites.shift();
+  spI = Math.max(0, DOC.sprites.length - r.added.length);
+  stI = 0; bxI = boxes().length ? 0 : -1;
+  rebuild();
+  const msg = 'merged ' + r.added.length + ' sprite' + (r.added.length === 1 ? '' : 's') +
+    (r.renamed.length ? ', renamed ' + r.renamed.join(', ') : '') +
+    (res.errs.length ? ', ' + res.errs.length + ' line(s) skipped' : '');
+  $('taErr').textContent = msg;
+  $('stat').textContent = msg;
+  return true;
+}
+function load(txt, who){
+  const res = parse(txt);
+  if (!res.doc.sprites.length){
+    alert('nothing loaded from ' + (who || 'text') + '\n\n' + res.errs.slice(0,8).join('\n'));
+    return false;
+  }
+  snap(); DOC = res.doc; spI = 0; stI = 0; bxI = boxes().length ? 0 : -1;
+  rebuild();
+  $('taErr').textContent = res.errs.length ? res.errs.length + ' line(s) skipped: ' +
+    res.errs.slice(0,4).join(' | ') : '';
+  return true;
+}
+$('exp').onclick = function(){
+  const blob = new Blob([serialise(DOC)], { type:'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'cast.sprite.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+};
+$('showTxt').onclick = function(){
+  $('ta').value = serialise(DOC); $('taErr').textContent = '';
+  $('txt').classList.add('on'); this.classList.add('on');
+};
+$('closeTxt').onclick = function(){
+  $('txt').classList.remove('on'); $('showTxt').classList.remove('on');
+};
+$('mergeTxt').onclick = function(){
+  const t = $('ta').value;
+  if (!t.trim()){ $('taErr').textContent = 'nothing to merge'; return; }
+  if (doMerge(t, 'the text pane')) $('ta').value = serialise(DOC);
+};
+$('reload').onclick = function(){ $('ta').value = serialise(DOC); $('taErr').textContent = ''; };
+$('apply').onclick = function(){
+  const t = $('ta').value;
+  if (!t.trim()){ $('taErr').textContent = 'nothing to apply'; return; }
+  const res = parse(t);
+  if (!res.doc.sprites.length){
+    $('taErr').textContent = 'no sprites parsed. ' + res.errs.slice(0,3).join(' | ');
+    return;
+  }
+  snap(); DOC = res.doc; spI = 0; stI = 0; bxI = boxes().length ? 0 : -1; rebuild();
+  $('taErr').textContent = res.errs.length
+    ? res.errs.length + ' line(s) skipped: ' + res.errs.slice(0,4).join(' | ')
+    : 'applied cleanly';
+};
+
+const FN = { fwd:['f',1], aft:['f',-1], lft:['l',1], rgt:['l',-1], top:['z',1], bot:['z',-1] };
+function axisVec(p, ax){
+  if (ax === 'z') return [0, -0.78 * K];
+  const c = Math.cos(p.a), si = Math.sin(p.a);
+  const dx = ax === 'f' ? c : -si, dy = ax === 'f' ? si : c;
+  return [(dx - dy) * K, (dx + dy) * K * 0.5];
+}
+function along(v, dx, dy){
+  const d = v[0] * v[0] + v[1] * v[1];
+  return d < 1e-9 ? 0 : (dx * v[0] + dy * v[1]) / d;
+}
+function snapTo(v, st){ return Math.round(v / st) * st; }
+function stepFor(e){ return e.altKey ? 0.001 : e.shiftKey ? 0.05 : 0.01; }
+function pickAt(mx, my){
+  for (let i = pickList.length - 1; i >= 0; i--)
+    if (inPoly(pickList[i].q, mx, my)) return pickList[i];
+  return null;
+}
+function restoreGeom(b, o){
+  b.f = o.f; b.l = o.l; b.z = o.z; b.L = o.L; b.W = o.W; b.H = o.H;
+}
+
+let drag = null;
+cv.onmousedown = function(e){
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  if (e.button === 1 || (e.button === 0 && e.shiftKey && e.altKey)){
+    drag = { m:'pan', x:e.clientX, y:e.clientY, px:panX, py:panY }; return; }
+  const hit = pickAt(mx, my);
+  if (!hit){ drag = { m:'orbit', x:e.clientX, a:camA, moved:false }; return; }
+  const wasSel = hit.i === bxI, hadFace = faceSel;
+  if (!wasSel){ bxI = hit.i; faceSel = ''; rebuild(); }
+  const b = boxes()[hit.i];
+  drag = { m:'edit', hit:hit, b:b, wasSel:wasSel, live:false,
+           mode:(wasSel && hadFace && hit.fc === hadFace) ? 'resize' : 'move',
+           x:e.clientX, y:e.clientY,
+           o:{ f:b.f, l:b.l, z:b.z, L:b.L, W:b.W, H:b.H } };
+};
+function hoverCursor(e){
+  if (e.target !== cv) return;
+  const r = cv.getBoundingClientRect();
+  const hit = pickAt(e.clientX - r.left, e.clientY - r.top);
+  cv.style.cursor = !hit ? 'default'
+    : hit.i !== bxI ? 'pointer'
+    : (faceSel && hit.fc === faceSel) ? 'ns-resize' : 'move';
+}
+window.addEventListener('mousemove', function(e){
+  if (!drag){ hoverCursor(e); return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (drag.m === 'orbit'){
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    camA = drag.a + dx * 0.012; render(); return; }
+  if (drag.m === 'pan'){ panX = drag.px + dx; panY = drag.py + dy; render(); return; }
+  if (!drag.live){
+    if (Math.abs(dx) + Math.abs(dy) < 4) return;
+    drag.live = true;
+    snap();
+    if (drag.mode === 'move'){
+      let best = 'f', bs = -1;
+      for (const ax of ['f','l','z']){
+        const v = axisVec(drag.hit.part, ax), len = Math.hypot(v[0], v[1]) || 1;
+        const d = Math.abs((dx * v[0] + dy * v[1]) / len);
+        if (d > bs){ bs = d; best = ax; }
+      }
+      drag.ax = best;
+    } else drag.ax = FN[drag.hit.fc][0];
+    axisLock = drag.ax;
+  }
+  const b = drag.b, o = drag.o, part = drag.hit.part, st = stepFor(e);
+  const keep = { f:b.f, l:b.l, z:b.z, L:b.L, W:b.W, H:b.H };
+  let t = along(axisVec(part, drag.ax), dx, dy);
+  if (drag.ax === 'l' && part.flip) t = -t;
+  if (drag.mode === 'move'){
+    if (drag.ax === 'f') b.f = snapTo(o.f + t, st);
+    else if (drag.ax === 'l') b.l = snapTo(o.l + t, st);
+    else b.z = snapTo(o.z + t, st);
+  } else {
+    const sg = FN[drag.hit.fc][1], out = snapTo(sg * t, st);
+    if (drag.ax === 'f'){ b.L = Math.max(st, o.L + out); b.f = o.f + sg * (b.L - o.L) / 2; }
+    else if (drag.ax === 'l'){ b.W = Math.max(st, o.W + out); b.l = o.l + sg * (b.W - o.W) / 2; }
+    else if (sg > 0) b.H = Math.max(st, o.H + out);
+    else { b.H = Math.max(st, o.H + out); b.z = o.z - (b.H - o.H); }
+  }
+  if (noClash && burialRiskFor(boxes(), drag.hit.i) > BURY_BLOCK) restoreGeom(b, keep);
+  buildProps(); render();
+});
+window.addEventListener('mouseup', function(){
+  if (drag && drag.m === 'orbit' && !drag.moved && (bxI >= 0 || faceSel)){
+    bxI = -1; faceSel = ''; axisLock = ''; rebuild();
+  }
+  if (drag && drag.m === 'edit'){
+    if (!drag.live && drag.wasSel)
+      faceSel = (faceSel === drag.hit.fc) ? '' : drag.hit.fc;
+    axisLock = '';
+    rebuild();
+  }
+  drag = null;
+});
+cv.addEventListener('wheel', function(e){
+  e.preventDefault();
+  K = Math.max(8, Math.min(400, K * (e.deltaY > 0 ? 0.92 : 1.087))); render();
+}, { passive:false });
+
+window.addEventListener('keydown', function(e){
+  const t = e.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
+    e.preventDefault(); if (e.shiftKey) restore(REDO, UNDO); else restore(UNDO, REDO); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y'){
+    e.preventDefault(); restore(REDO, UNDO); return; }
+  const b = cur(); if (!b) return;
+  const was = { f:b.f, l:b.l, z:b.z, L:b.L, W:b.W, H:b.H };
+  const s = e.altKey ? 0.001 : 0.01;
+  let hit = true;
+  if (e.key === 'ArrowLeft')  e.shiftKey ? b.W = Math.max(0, b.W - s) : b.l -= s;
+  else if (e.key === 'ArrowRight') e.shiftKey ? b.W += s : b.l += s;
+  else if (e.key === 'ArrowUp')    e.shiftKey ? b.L += s : b.f += s;
+  else if (e.key === 'ArrowDown')  e.shiftKey ? b.L = Math.max(0, b.L - s) : b.f -= s;
+  else if (e.key === 'PageUp')     e.shiftKey ? b.H += s : b.z += s;
+  else if (e.key === 'PageDown')   e.shiftKey ? b.H = Math.max(0, b.H - s) : b.z -= s;
+  else if (e.key === 'Delete' || e.key === 'Backspace') $('bxDel').onclick();
+  else if (e.key.toLowerCase() === 'd') $('bxDup').onclick();
+  else hit = false;
+  if (hit){
+    e.preventDefault();
+    if (noClash && burialRiskFor(boxes(), bxI) > BURY_BLOCK) restoreGeom(b, was);
+    CLASH = computeClash(boxes());
+    buildProps(); buildList(); render();
+  }
+});
+
+let last = 0;
+function loop(t){
+  if (spin && !drag){ if (last) camA += (t - last) / 1000 * 0.42; render(); }
+  last = t;
+  requestAnimationFrame(loop);
+}
+
+DOC = { sprites: [ { name:'untitled', mass:0, states: [ { name:'idle', boxes: [] } ] } ] };
+window.addEventListener('resize', resize);
+rebuild(); resize(); requestAnimationFrame(loop);
+</script>

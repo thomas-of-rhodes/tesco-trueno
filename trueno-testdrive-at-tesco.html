@@ -1,0 +1,2389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trueno Testdrive at Tesco</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0c0e;color:#cfd6db;
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden}
+  canvas{display:block;cursor:crosshair}
+  #tel{position:fixed;top:14px;left:14px;width:238px;padding:12px 13px 11px;
+    background:rgba(9,11,13,.9);border:1px solid #23282d;border-radius:2px;
+    font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#9aa5ad;user-select:none;
+    max-height:calc(100vh - 120px);overflow-y:auto}
+  #tel h1{margin:0 0 8px;font:600 13px/1 inherit;color:#e8523f;letter-spacing:.06em}
+  #tel .row{display:flex;justify-content:space-between;gap:8px}
+  #tel .row span:last-child{color:#dbe3e8;font-variant-numeric:tabular-nums}
+  #tel .sep{height:1px;background:#1e2429;margin:9px 0 8px}
+  #tel .gene{display:flex;align-items:center;gap:6px;height:15px}
+  #tel .gene b{flex:0 0 62px;font-weight:400;color:#7b858d}
+  #tel .bar{flex:1;height:9px;background:transparent;position:relative;cursor:ew-resize}
+  #tel .bar::before{content:'';position:absolute;left:0;right:0;top:3px;height:3px;background:#1c2226}
+  #tel .bar i{position:absolute;left:0;top:3px;height:3px;background:#4d7f96;display:block}
+  #tel .bar u{position:absolute;top:0;bottom:0;width:1px;background:#e2a84a;display:none}
+  #tel .hint{margin-top:7px;color:#5c666d;font-size:10.5px;line-height:1.4}
+  #tel .num{flex:0 0 40px;text-align:right;color:#c3ccd2;font-variant-numeric:tabular-nums}
+  #tel .ok{color:#7fc08a} #tel .no{color:#8d949a}
+  #keys{position:fixed;bottom:12px;left:14px;font:11px/1.7 ui-monospace,Menlo,monospace;
+    color:#5c666d;user-select:none}
+  #keys b{color:#8e9aa2;font-weight:400}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="tel" class="hide">
+  <h1>TRUENO TESTDRIVE AT TESCO</h1>
+  <div class="row"><span>car park</span><span id="t-park">—</span></div>
+  <div class="row"><span>world age</span><span id="t-age">0:00</span></div>
+  <div class="row"><span>time warp</span><span id="t-warp">1x</span></div>
+  <div class="row"><span>window</span><span id="t-gen">1</span></div>
+  <div class="row"><span>driving</span><span id="t-mode">—</span></div>
+  <div class="row"><span>last verdict</span><span id="t-verd">—</span></div>
+  <div class="sep"></div>
+  <div class="row"><span>best score/s</span><span id="t-best">0</span></div>
+  <div class="row"><span>best ever</span><span id="t-hof">—</span></div>
+  <div class="row"><span>this window</span><span id="t-cur">0</span></div>
+  <div class="row"><span>average pace</span><span id="t-cov">0</span></div>
+  <div class="row"><span>bumps</span><span id="t-imp">0</span></div>
+  <div class="sep"></div>
+  <div class="row"><span>speed / best</span><span id="t-spd">0</span></div>
+  <div class="row"><span>slip angle</span><span id="t-slip">0&deg;</span></div>
+  <div class="row"><span>handbrake</span><span id="t-hb">—</span></div>
+  <div class="row"><span>manoeuvre</span><span id="t-jt">—</span></div>
+  <div class="row"><span>ghost picked</span><span id="t-gh">—</span></div>
+  <div class="row"><span>line radius</span><span id="t-line">—</span></div>
+  <div class="row"><span>gap locked</span><span id="t-gap">—</span></div>
+  <div class="row"><span>beyond it</span><span id="t-out">—</span></div>
+  <div class="row"><span>threaded</span><span id="t-thr">0</span></div>
+  <div class="row"><span>close calls</span><span id="t-near">0</span></div>
+  <div class="row"><span>bad vibes here</span><span id="t-dread">—</span></div>
+  <div class="row"><span>waved off</span><span id="t-ab">0</span></div>
+  <div class="row"><span>mutation size</span><span id="t-sig">0</span></div>
+  <div class="sep"></div>
+  <div id="genes"></div>
+</div>
+
+<div id="keys">
+  <b>left click</b> park a vehicle &nbsp; <b>right click</b> remove one<br>
+  <b>wheel</b> zoom &nbsp; <b>middle drag</b> pan &nbsp; <b>f</b> follow Trueno<br>
+  <b>, .</b> time warp &nbsp; <b>space</b> pause &nbsp; <b>t</b> telemetry &nbsp; <b>d</b> show his workings &nbsp;
+  <b>r</b> wipe Trueno &nbsp; <b>c</b> reset car park
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ world */
+const GW = 200, GH = 150;               // metres; 1 grid cell = 1 m
+const grid = new Uint8Array(GW * GH);   // 1 = something solid, 0 = tarmac
+const owner = new Int16Array(GW * GH);  // which parked car, so a hit knows what it shoved
+const solid = (x, y) => (x < 0 || y < 0 || x >= GW || y >= GH) ? 1 : grid[y * GW + x];
+const WALL = 4;                          // perimeter thickness
+
+/* vehicles: L along their own heading, W across, H upward */
+const TYPES = [
+  { n: 'hatch',  L: 4.05, W: 1.78, H: 1.44, bays: 1, w: 34, m: 1000 },
+  { n: 'saloon', L: 4.72, W: 1.83, H: 1.46, bays: 1, w: 22, m: 1280 },
+  { n: 'estate', L: 4.85, W: 1.86, H: 1.55, bays: 1, w: 12, m: 1350 },
+  { n: '4x4',    L: 4.60, W: 1.96, H: 1.86, bays: 1, w: 14, m: 1800 },
+  { n: 'van',    L: 5.55, W: 2.05, H: 2.35, bays: 1, w: 10, m: 1950 },
+  { n: 'luton',  L: 6.60, W: 2.30, H: 3.15, bays: 2, w: 5,  m: 3400 },
+  { n: 'artic',  L: 15.4, W: 2.55, H: 4.00, bays: 5, w: 3,  m: 15000 }
+];
+const PAINT = ['#b6babd', '#8d9398', '#59697a', '#7a4043', '#3e5a4b',
+               '#c9cac5', '#494e55', '#a79f92', '#6d7f8c', '#2f3438'];
+const TOTW = TYPES.reduce((a, t) => a + t.w, 0);
+function randType(maxBays) {
+  for (let tries = 0; tries < 24; tries++) {
+    let r = Math.random() * TOTW;
+    for (const t of TYPES) { r -= t.w; if (r <= 0) { if (t.bays <= maxBays) return t; break; } }
+  }
+  return TYPES[0];
+}
+
+const bays = [];        // {x0,y0,w,d,row,seg,i,veh}
+const vehicles = [];    // {cx,cy,ang,L,W,H,col,bays:[]}
+
+/* ------------------------------------------------ the shape of the place
+   The outline is a fattened ASCII character, drawn to an offscreen canvas and
+   read back as a mask, so counters like A, B and 8 leave solid islands in the
+   middle of the car park and the aisles have to work round them. Only the
+   largest connected blob is kept, or a glyph like ! or % would leave him
+   marooned in a piece he can't drive out of. */
+const base = new Uint8Array(GW * GH);          // permanently solid: void, beds, kerbs
+const beds = [], trees = [];
+let parkGlyph = '?';
+const GLYPHS = 'ABDEGHKMNOPQRSUWXZ2356890@#&%$?!*+abdeghmnopqu';
+
+function glyphMask() {
+  let cv2, gx;
+  try {
+    cv2 = document.createElement('canvas'); cv2.width = GW; cv2.height = GH;
+    gx = cv2.getContext('2d');
+  } catch (e) { return null; }
+  for (let tries = 0; tries < 14; tries++) {
+    const ch = GLYPHS[Math.random() * GLYPHS.length | 0];
+    let data = null;
+    try {
+      gx.clearRect(0, 0, GW, GH);
+      gx.fillStyle = '#fff'; gx.strokeStyle = '#fff';
+      gx.textAlign = 'center'; gx.textBaseline = 'middle';
+      gx.lineJoin = 'round'; gx.lineWidth = GH * 0.085;      // the "bold" part
+      gx.font = '900 ' + (GH * 1.32).toFixed(0) +
+                'px "Arial Black","Helvetica Neue",Impact,sans-serif';
+      gx.save(); gx.translate(GW / 2, GH * 0.53); gx.scale(1.22, 1);
+      gx.strokeText(ch, 0, 0); gx.fillText(ch, 0, 0); gx.restore();
+      const img = gx.getImageData(0, 0, GW, GH);
+      data = img && img.data;
+    } catch (e) { return null; }
+    if (!data) return null;
+    const m = new Uint8Array(GW * GH);
+    let area = 0;
+    for (let i = 0; i < GW * GH; i++) if (data[i * 4 + 3] > 96) { m[i] = 1; area++; }
+    if (area > GW * GH * 0.3 && area < GW * GH * 0.93) return { mask: m, ch: ch };
+  }
+  return null;
+}
+
+function largestBlob(m) {                       // 4-connected flood fill, keep the biggest
+  const seen2 = new Uint8Array(GW * GH), out = new Uint8Array(GW * GH);
+  let bestN = 0, bestSeed = -1;
+  const stack = [];
+  for (let s = 0; s < GW * GH; s++) {
+    if (!m[s] || seen2[s]) continue;
+    stack.length = 0; stack.push(s); seen2[s] = 1;
+    const cells = [];
+    while (stack.length) {
+      const i = stack.pop(); cells.push(i);
+      const x = i % GW, y = (i / GW) | 0;
+      if (x > 0 && m[i - 1] && !seen2[i - 1]) { seen2[i - 1] = 1; stack.push(i - 1); }
+      if (x < GW - 1 && m[i + 1] && !seen2[i + 1]) { seen2[i + 1] = 1; stack.push(i + 1); }
+      if (y > 0 && m[i - GW] && !seen2[i - GW]) { seen2[i - GW] = 1; stack.push(i - GW); }
+      if (y < GH - 1 && m[i + GW] && !seen2[i + GW]) { seen2[i + GW] = 1; stack.push(i + GW); }
+    }
+    if (cells.length > bestN) { bestN = cells.length; bestSeed = s; bestCells = cells; }
+  }
+  if (bestSeed < 0) return null;
+  for (const i of bestCells) out[i] = 1;
+  return out;
+}
+let bestCells = [];
+
+let inPark = new Uint8Array(GW * GH);           // 1 = tarmac exists here
+function makeShape() {
+  const g = glyphMask();
+  let m;
+  if (g) { m = largestBlob(g.mask); parkGlyph = g.ch; }
+  if (!m) {                                     // no canvas pixels available: plain park
+    m = new Uint8Array(GW * GH); parkGlyph = '\u25a0';
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) m[y * GW + x] = 1;
+  }
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++)
+    if (x < WALL || y < WALL || x >= GW - WALL || y >= GH - WALL) m[y * GW + x] = 0;
+  inPark = m;
+}
+const openCell = (x, y) => (x < 0 || y < 0 || x >= GW || y >= GH) ? 0 : inPark[y * GW + x];
+
+function layout() {
+  bays.length = 0;
+  const segs = [[15, 69], [81, 127], [139, 186]];   // gaps between are cross-aisles
+  const BW = 3, BD = 5;
+  let row = 0;
+  for (const top of [15, 37, 59, 81, 103, 125]) {    // each block is two rows back to back
+    for (const y0 of [top, top + BD]) {
+      let seg = 0;
+      for (const [a, b] of segs) {
+        const n = Math.floor((b - a) / BW), pad = (b - a - n * BW) / 2;
+        for (let k = 0; k < n; k++) {
+          const x0 = a + pad + k * BW;
+          // only keep bays that are properly on the tarmac, with the aisle side clear
+          let ok = true;
+          for (let yy = y0 - 1; yy <= y0 + BD + 1 && ok; yy++)
+            for (let xx = x0; xx < x0 + BW && ok; xx++)
+              if (!openCell(xx | 0, yy | 0)) ok = false;
+          if (ok) bays.push({ x0, y0, w: BW, d: BD, row, seg, blk: row >> 1, top,
+                              openUp: y0 === top, bed: false, i: bays.length, veh: null });
+        }
+        seg++;
+      }
+      row++;
+    }
+  }
+}
+
+/* Vegetation beds replace whole runs of parking, both rows of a block at once,
+   so they read as planted islands rather than scattered gaps. */
+function plantBeds() {
+  beds.length = 0; trees.length = 0;
+  const bayArea = bays.length * 15;
+  const target = bayArea * 0.30;
+  let planted = 0, tries = 0;
+  while (planted < target && tries++ < 600) {
+    const seed = bays[Math.random() * bays.length | 0];
+    if (!seed || seed.bed) continue;
+    const blk = seed.blk, seg = seed.seg;
+    // the columns present in BOTH rows of this block
+    const cols = bays.filter(b => b.blk === blk && b.seg === seg && !b.bed)
+                     .map(b => b.x0);
+    const both = [...new Set(cols)].filter(x =>
+      bays.some(b => b.blk === blk && b.x0 === x && b.row === blk * 2 && !b.bed) &&
+      bays.some(b => b.blk === blk && b.x0 === x && b.row === blk * 2 + 1 && !b.bed)
+    ).sort((p, q) => p - q);
+    if (both.length < 3) continue;
+    const runLen = 3 + (Math.random() * 7 | 0);
+    const start = Math.random() * Math.max(1, both.length - runLen) | 0;
+    const picked = [];
+    for (let k = 0; k < runLen && start + k < both.length; k++) {
+      if (k && both[start + k] - both[start + k - 1] > 3.5) break;   // must be contiguous
+      picked.push(both[start + k]);
+    }
+    if (picked.length < 3) continue;
+    const x0 = picked[0], x1 = picked[picked.length - 1] + 3;
+    const y0 = seed.top, y1 = seed.top + 10;
+    for (const b of bays) if (b.blk === blk && b.x0 >= x0 && b.x0 < x1) b.bed = true;
+    beds.push({ x0, y0, w: x1 - x0, h: y1 - y0 });
+    planted += (x1 - x0) * (y1 - y0);
+    // a tree every few metres, jittered
+    for (let ty = y0 + 2; ty < y1 - 1; ty += 4.2)
+      for (let tx = x0 + 1.8; tx < x1 - 1.2; tx += 4.6)
+        if (Math.random() < 0.78)
+          trees.push({ x: tx + (Math.random() - 0.5) * 1.4, y: ty + (Math.random() - 0.5) * 1.4,
+                       r: 1.3 + Math.random() * 0.9, h: 3.2 + Math.random() * 2.4 });
+  }
+}
+
+const bedMask = new Uint8Array(GW * GH);
+function buildBase() {
+  base.fill(0); bedMask.fill(0);
+  for (let i = 0; i < GW * GH; i++) if (!inPark[i]) base[i] = 1;
+  for (const b of beds)
+    for (let y = Math.floor(b.y0); y < b.y0 + b.h; y++)
+      for (let x = Math.floor(b.x0); x < b.x0 + b.w; x++)
+        if (x >= 0 && y >= 0 && x < GW && y < GH) { base[y * GW + x] = 1; bedMask[y * GW + x] = 1; }
+}
+
+function addVehicle(t, cx, cy, ang, bayIds) {
+  const v = { cx, cy, ang, L: t.L, W: t.W, H: t.H, type: t.n, mass: t.m || 1200, t: t,
+              col: PAINT[Math.random() * PAINT.length | 0], bays: bayIds || [] };
+  vehicles.push(v);
+  for (const id of v.bays) bays[id].veh = v;
+  return v;
+}
+
+function fillBay(b) {
+  if (b.veh) return null;
+  // how many consecutive free bays sit to the right of this one, in the same row and segment
+  let run = 1;
+  while (run < 5) {
+    const nb = bays[b.i + run];
+    if (!nb || nb.row !== b.row || nb.seg !== b.seg || nb.veh) break;
+    run++;
+  }
+  const t = randType(run);
+  const span = [], n = t.bays;
+  for (let k = 0; k < n; k++) span.push(b.i + k);
+  const x0 = b.x0, x1 = bays[b.i + n - 1].x0 + b.w;
+  if (n === 1)  // cars nose into the bay, so they back out toward the aisle
+    return addVehicle(t, (x0 + x1) / 2, b.y0 + b.d / 2,
+                      b.openUp ? Math.PI / 2 : -Math.PI / 2, span);
+  // vans and lorries lie along the row instead
+  return addVehicle(t, (x0 + x1) / 2, b.y0 + b.d / 2, 0, span);
+}
+
+function removeVehicle(v) {
+  const k = vehicles.indexOf(v);
+  if (k < 0) return;
+  vehicles.splice(k, 1);
+  for (const id of v.bays) if (bays[id].veh === v) bays[id].veh = null;
+}
+
+function vehicleAt(wx, wy) {
+  for (let i = vehicles.length - 1; i >= 0; i--) {
+    const v = vehicles[i], c = Math.cos(-v.ang), s = Math.sin(-v.ang);
+    const dx = wx - v.cx, dy = wy - v.cy;
+    if (Math.abs(dx * c - dy * s) <= v.L / 2 + .3 && Math.abs(dx * s + dy * c) <= v.W / 2 + .3) return v;
+  }
+  return null;
+}
+function bayAt(wx, wy) {
+  for (const b of bays)
+    if (wx >= b.x0 && wx < b.x0 + b.w && wy >= b.y0 && wy < b.y0 + b.d) return b;
+  return null;
+}
+
+function resetPark() {
+  vehicles.length = 0; movers.length = 0;
+  lastSeen.fill(-1e4); dread.fill(0);
+  makeShape();
+  layout();
+  plantBeds();
+  buildBase();
+  for (const b of bays) if (!b.bed && !b.veh && Math.random() < 0.40) fillBay(b);
+  rebuild();
+  buildRoutes();
+  for (let i = 0; i < 6; i++) spawnGranny();
+  spawnFromOpen();
+}
+
+/* Somewhere on the tarmac to drop him, near the middle of the biggest open run */
+function spawnFromOpen() {
+  let best = null, bd = -1;
+  for (const n of NODES) {
+    let room = 0;
+    for (const a2 of [0, 1.5708, 3.1416, 4.7124])
+      room += probe(n.x, n.y, Math.cos(a2), Math.sin(a2), 60, null);
+    if (room > bd) { bd = room; best = n; }
+  }
+  if (best) { spawn.x = best.x; spawn.y = best.y; spawn.h = 0; }
+}
+
+/* rasterise every vehicle into the grid Trueno's rays read */
+function rebuild() {
+  grid.set(base);                       // void, beds and kerbs are permanent
+  owner.fill(-1);
+  for (let vi = 0; vi < vehicles.length; vi++) {
+    const v = vehicles[vi];
+    const c = Math.cos(-v.ang), s = Math.sin(-v.ang);
+    const hl = v.L / 2 + 0.2, hw = v.W / 2 + 0.2;
+    const rad = Math.ceil(hl) + 1;
+    for (let y = Math.max(0, (v.cy - rad) | 0); y <= Math.min(GH - 1, (v.cy + rad) | 0); y++)
+      for (let x = Math.max(0, (v.cx - rad) | 0); x <= Math.min(GW - 1, (v.cx + rad) | 0); x++) {
+        const dx = x + 0.5 - v.cx, dy = y + 0.5 - v.cy;
+        if (Math.abs(dx * c - dy * s) <= hl && Math.abs(dx * s + dy * c) <= hw) {
+          grid[y * GW + x] = 1; owner[y * GW + x] = vi;
+        }
+      }
+  }
+  buildSDF();
+  buildProps();
+  buildLattice();
+}
+
+const spawn = { x: 100, y: 9.5, h: 0 };
+
+/* ------------------------------------------------- the route lattice
+   Nodes down the middle of every aisle. Sideways links always exist (aisles run
+   clear); links between aisles only where the ground between them is actually
+   open, which means cross-aisles and any column of empty bays. Delete a couple
+   of cars and a new shortcut appears in the lattice by itself. */
+const LAY = [9.5, 31, 53, 75, 97, 119, 140.5];       // aisle centrelines, north to south
+const LAX = [];
+for (let x = 12; x <= 190; x += 12.7) LAX.push(x);   // sample posts along each aisle
+const LN = [];                                        // lattice nodes
+const LE = [];                                        // adjacency: array of index arrays
+function buildLattice() {
+  LN.length = 0; LE.length = 0;
+  for (let r = 0; r < LAY.length; r++)
+    for (let c = 0; c < LAX.length; c++) LN.push({ x: LAX[c], y: LAY[r], r: r, c: c });
+  const at = (r, c) => r * LAX.length + c;
+  const openBetween = (a, b) => {
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    return probe(a.x, a.y, (b.x - a.x) / d, (b.y - a.y) / d, d - 1.2, null) >= d - 1.6;
+  };
+  for (let i = 0; i < LN.length; i++) LE.push([]);
+  // With the park cut to a letter shape an aisle can simply stop, so every link
+  // has to be tested now, sideways ones included.
+  for (let r = 0; r < LAY.length; r++) for (let c = 0; c < LAX.length; c++) {
+    const i = at(r, c);
+    if (solid(LN[i].x | 0, LN[i].y | 0)) continue;
+    if (c + 1 < LAX.length) {
+      const j = at(r, c + 1);
+      if (!solid(LN[j].x | 0, LN[j].y | 0) && openBetween(LN[i], LN[j])) {
+        LE[i].push(j); LE[j].push(i);
+      }
+    }
+    if (r + 1 < LAY.length) {
+      const j = at(r + 1, c);
+      if (!solid(LN[j].x | 0, LN[j].y | 0) && openBetween(LN[i], LN[j])) {
+        LE[i].push(j); LE[j].push(i);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------- the shoppers circling
+   Aisle centrelines form a graph. Grannies crawl node to node looking for a
+   space, nose up to anything in the way, and dither when they think they've
+   spotted one. They are not in the grid: Trueno's rays test them directly. */
+const AY = [9.5, 31, 53, 75, 97, 119, 140.5], AX = [9.5, 75, 133, 191];
+const NODES = [];
+const neighbours = n => n.adj;
+
+/* Built from the ground rather than assumed: a node only exists if there's
+   tarmac under it, an edge only if you can actually drive it, and then only
+   the largest connected piece is kept so nobody gets stranded in a corner. */
+function buildRoutes() {
+  const cand = [];
+  for (let r = 0; r < AY.length; r++) for (let c = 0; c < AX.length; c++) {
+    const x = AX[c], y = AY[r];
+    if (solid(x | 0, y | 0)) continue;
+    cand.push({ x: x, y: y, r: r, c: c, adj: [] });
+  }
+  const find = (r, c) => cand.find(n => n.r === r && n.c === c);
+  const drivable = (a2, b2) => {
+    const d = Math.hypot(b2.x - a2.x, b2.y - a2.y);
+    return probe(a2.x, a2.y, (b2.x - a2.x) / d, (b2.y - a2.y) / d, d - 1.5, null) >= d - 2;
+  };
+  for (const n of cand) {
+    for (const [dr, dc] of [[1, 0], [0, 1]]) {
+      const m = find(n.r + dr, n.c + dc);
+      if (m && drivable(n, m)) { n.adj.push(m); m.adj.push(n); }
+    }
+  }
+  // keep the biggest connected component
+  let best = [];
+  const seenN = new Set();
+  for (const n of cand) {
+    if (seenN.has(n)) continue;
+    const comp = [], st = [n]; seenN.add(n);
+    while (st.length) {
+      const q = st.pop(); comp.push(q);
+      for (const m of q.adj) if (!seenN.has(m)) { seenN.add(m); st.push(m); }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  NODES.length = 0;
+  for (const n of best) NODES.push(n);
+}
+const DULL = ['#b9bcbe', '#a89a86', '#8e9398', '#c7c8c3', '#6f5f5c', '#9aa4a8'];
+const movers = [];
+function spawnGranny() {
+  if (NODES.length < 2) return;
+  let n = null;
+  for (let t = 0; t < 40 && !n; t++) {
+    const c = NODES[Math.random() * NODES.length | 0];
+    if (c.adj.length) n = c;
+  }
+  if (!n) return;
+  const nb = neighbours(n), to = nb[Math.random() * nb.length | 0];
+  movers.push({ x: n.x, y: n.y, h: Math.atan2(to.y - n.y, to.x - n.x), ang: 0, v: 0,
+    from: n, to: to, L: 4.3, W: 1.82, H: 1.52, col: DULL[Math.random() * DULL.length | 0],
+    cruise: 2.0 + Math.random() * 2.6, dither: 0, blocked: 0,
+    mode: 'roam', path: null, pi: 0, bay: null, out: 0, parkT: 0,
+    parkIn: 90 + Math.random() * 210,              // how long until she tries a space
+    lane: 1.4 + Math.random() * 1.8,               // how far over she sits
+    wobA: 0.3 + Math.random() * 1.7,               // and how much she wanders about in it
+    wobF: 0.12 + Math.random() * 0.33, wobP: Math.random() * 6.283,
+    spdF: 0.09 + Math.random() * 0.22, spdP: Math.random() * 6.283,
+    halt: 0, nextHalt: 12 + Math.random() * 50 });
+}
+function bayPose(b) {
+  const bx = b.x0 + b.w / 2;
+  return b.openUp
+    ? { hd: Math.PI / 2,  stage: [bx, b.y0 - 6.5], door: [bx, b.y0 + 0.6],  mid: [bx, b.y0 + 2.5] }
+    : { hd: -Math.PI / 2, stage: [bx, b.y0 + b.d + 6.5], door: [bx, b.y0 + b.d - 0.6], mid: [bx, b.y0 + 2.5] };
+}
+let mvNear = null;                    // planning only cares about traffic within reach
+function moverAt(px, py, skip) {
+  for (const m of (mvNear || movers)) {
+    if (m === skip) continue;
+    const dx = px - m.x, dy = py - m.y;
+    if (dx * dx + dy * dy > 16) continue;
+    const c = Math.cos(-m.h), s = Math.sin(-m.h);
+    if (Math.abs(dx * c - dy * s) <= m.L / 2 && Math.abs(dx * s + dy * c) <= m.W / 2) return m;
+  }
+  return null;
+}
+function moverNormal(m, px, py) {
+  const c = Math.cos(-m.h), s = Math.sin(-m.h);
+  const lx = (px - m.x) * c - (py - m.y) * s, ly = (px - m.x) * s + (py - m.y) * c;
+  const ch = Math.cos(m.h), sh = Math.sin(m.h);
+  if (Math.abs(lx) / (m.L / 2) > Math.abs(ly) / (m.W / 2)) {
+    const g = Math.sign(lx) || 1; return [ch * g, sh * g];
+  }
+  const g = Math.sign(ly) || 1; return [-sh * g, ch * g];
+}
+/* She finds a space, parks in it, and gives up on driving. Then she turns up
+   at the other end of the car park in someone else's Jazz and backs that one
+   out instead. The park's occupancy stays the same; the layout doesn't. */
+function nearestFreeBay(m, range) {
+  let best = null, bd = range * range;
+  for (const b of bays) {
+    if (b.veh) continue;
+    const bx = b.x0 + b.w / 2, by = b.y0 + b.d / 2;
+    const d2 = (bx - m.x) * (bx - m.x) + (by - m.y) * (by - m.y);
+    if (d2 > bd) continue;
+    const p = bayPose(b);
+    if (solid(p.stage[0] | 0, p.stage[1] | 0)) continue;    // can't get at it
+    bd = d2; best = b;
+  }
+  return best;
+}
+function hopToAnotherCar(m) {
+  // take over a parked car somewhere else and back it out
+  // A car left at an angle across the tarmac is the one she tuts at and moves,
+  // so the grannies slowly tidy up after him instead of the mess just building.
+  const strays = vehicles.filter(v => v.bays.length === 0);
+  const opts = [];
+  if (strays.length) { for (const v of strays) opts.push(v); }
+  else for (const v of vehicles) {
+    if (v.bays.length !== 1) continue;
+    if (Math.hypot(v.cx - m.x, v.cy - m.y) < 45) continue;  // somewhere else, not next door
+    opts.push(v);
+  }
+  if (!opts.length) { m.mode = 'roam'; m.parkIn = 60; return; }
+  const v = opts[Math.random() * opts.length | 0];
+  const b = bays[v.bays[0]];
+  m.x = v.cx; m.y = v.cy; m.h = v.ang; m.ang = v.ang; m.v = 0;
+  m.col = v.col; m.mode = 'leave'; m.out = 0; m.bay = b;
+  removeVehicle(v);
+  rebuild();
+}
+function finishPark(m) {
+  const b = m.bay;
+  if (!b || b.veh) { m.mode = 'roam'; m.parkIn = 30; return; }   // someone took it
+  const t = TYPES[0];
+  const v = addVehicle(t, b.x0 + b.w / 2, b.y0 + b.d / 2, bayPose(b).hd, [b.i]);
+  v.col = m.col;
+  rebuild();
+  hopToAnotherCar(m);
+}
+function steerTo(m, tx, ty, spd, dt, turn) {
+  let e = Math.atan2(ty - m.y, tx - m.x) - m.h;
+  while (e > Math.PI) e -= 6.2832; while (e < -Math.PI) e += 6.2832;
+  m.h += Math.max(-turn * dt, Math.min(turn * dt, e));
+  m.ang = m.h;
+  m.v += Math.max(-6 * dt, Math.min(2.5 * dt, spd - m.v));
+  m.x += Math.cos(m.h) * m.v * dt; m.y += Math.sin(m.h) * m.v * dt;
+}
+
+/* ------------------------------------------------------- shunting
+   Hit a parked car hard enough and it stops being scenery: it comes out of the
+   grid, gets the other half of the impulse, and slides and spins until friction
+   stops it, wherever that happens to be. It can pass the shove on to whatever
+   it hits next. */
+const MAX_LOOSE = 12;
+function setLoose(v, vx, vy, w) {
+  if (movers.filter(m => m.loose).length >= MAX_LOOSE) return;
+  removeVehicle(v);
+  movers.push({ x: v.cx, y: v.cy, h: v.ang, ang: v.ang, L: v.L, W: v.W, H: v.H,
+                col: v.col, type: v.type, loose: true, t: v.t, mass: v.mass,
+                vx: vx, vy: vy, v: 0, rest: 0,
+                w: Math.max(-3.5, Math.min(3.5, w)) });   // it can spin, but not like a top
+  rebuild();
+}
+function shunt(v, cpx, cpy, nx, ny, vn) {
+  const e = 0.25, m2 = v.mass;
+  const j = -(1 + e) * vn / (1 / M + 1 / m2);          // two-body normal impulse
+  const rx = cpx - v.cx, ry = cpy - v.cy;
+  const I = m2 * (v.L * v.L + v.W * v.W) / 12;
+  setLoose(v, -j * nx / m2, -j * ny / m2, -(rx * (-j * ny) - ry * (-j * nx)) / I);
+  return j;
+}
+function updateLoose(dt) {
+  for (let k = movers.length - 1; k >= 0; k--) {
+    const m = movers[k];
+    if (!m.loose) continue;
+    const c = Math.cos(m.h), s = Math.sin(m.h);
+    let vl = m.vx * c + m.vy * s, vt = -m.vx * s + m.vy * c;
+    const gd = 9.81 * dt;
+    // It's on wheels: sideways motion scrubs off quickly, but what's left rolls
+    // along where the wheels point and keeps going. A knocked car that trundles
+    // off is one he isn't left wedged against.
+    vl -= Math.sign(vl) * Math.min(Math.abs(vl), 0.09 * gd);   // rolls freely
+    vt -= Math.sign(vt) * Math.min(Math.abs(vt), 1.35 * gd);   // but hardly slides at all
+    m.vx = vl * c - vt * s; m.vy = vl * s + vt * c;
+    m.w *= Math.exp(-1.7 * dt);
+    m.x += m.vx * dt; m.y += m.vy * dt; m.h += m.w * dt; m.ang = m.h;
+
+    // did it clout something on the way?
+    const ch = Math.cos(m.h), sh = Math.sin(m.h);
+    for (const [bx, by] of [[m.L / 2, m.W / 2], [m.L / 2, -m.W / 2],
+                            [-m.L / 2, -m.W / 2], [-m.L / 2, m.W / 2]]) {
+      const px = m.x + bx * ch - by * sh, py = m.y + bx * sh + by * ch;
+      if (!solid(px | 0, py | 0)) continue;
+      const nn = normalAt(px, py);
+      const rel = m.vx * nn[0] + m.vy * nn[1];
+      const oi = owner[(py | 0) * GW + (px | 0)];
+      if (oi >= 0 && vehicles[oi] && rel < -1.2) {     // pass the shove along
+        shunt(vehicles[oi], px, py, nn[0], nn[1], rel);
+      }
+      m.x += nn[0] * 0.4; m.y += nn[1] * 0.4;
+      if (rel < 0) { m.vx -= 1.4 * rel * nn[0]; m.vy -= 1.4 * rel * nn[1]; m.w *= 0.5; }
+      break;
+    }
+
+    const spd = Math.hypot(m.vx, m.vy);
+    m.rest = (spd < 0.3 && Math.abs(m.w) < 0.06) ? m.rest + dt : 0;
+    // don't let it come to rest on top of him, or he's instantly wedged
+    if (m.rest > 0.5 && Math.hypot(m.x - car.x, m.y - car.y) < m.L / 2 + 3.2) m.rest = 0;
+    if (m.rest > 0.5) {                                // settled: park it where it stopped
+      movers.splice(k, 1);
+      const v = addVehicle(m.t || TYPES[0], m.x, m.y, m.h, []);
+      v.col = m.col;
+      // Left unchecked the aisles silt up with shunted cars until there's no
+      // circuit left, so beyond a couple of dozen the longest-abandoned one has
+      // quietly been put back in a space.
+      const left = vehicles.filter(q => q.bays.length === 0 && q !== v);
+      if (left.length > 18) {
+        const old = left[0], free = bays.filter(b => !b.bed && !b.veh);
+        if (free.length) {
+          const b2 = free[Math.random() * free.length | 0];
+          old.cx = b2.x0 + b2.w / 2; old.cy = b2.y0 + b2.d / 2;
+          old.ang = bayPose(b2).hd; old.bays = [b2.i]; b2.veh = old;
+        }
+      }
+      rebuild();
+    }
+  }
+}
+
+function updateMovers(dt) {
+  for (const m of movers) {
+    if (m.loose) continue;
+    if (m.mode === 'leave') {                     // backing out of the space
+      const back = probe(m.x, m.y, -Math.cos(m.h), -Math.sin(m.h), 7, m);
+      if (back > 3.2) {
+        m.v = Math.max(-1.1, m.v - 2 * dt);
+        m.x += Math.cos(m.h) * m.v * dt; m.y += Math.sin(m.h) * m.v * dt;
+        m.out += Math.abs(m.v) * dt;
+      }
+      if (m.out > 7.5 || back <= 3.2) {            // clear of the row, off she goes
+        const mess = vehicles.filter(q => q.bays.length === 0).length;
+        m.v = 0; m.mode = 'roam';
+        m.parkIn = (60 + Math.random() * 160) / (1 + mess / 8);
+        let best = NODES[0], bd = 1e9;
+        for (const n of NODES) {
+          const d = Math.hypot(n.x - m.x, n.y - m.y);
+          if (d < bd) { bd = d; best = n; }
+        }
+        const nb = neighbours(best);
+        m.from = best; m.to = nb[Math.random() * nb.length | 0];
+      }
+      continue;
+    }
+    if (m.mode === 'park') {                       // easing into the space
+      m.parkT += dt;
+      const wp = m.path[m.pi];
+      const dxw = wp[0] - m.x, dyw = wp[1] - m.y;
+      const near = Math.hypot(dxw, dyw);
+      const last = m.pi === m.path.length - 1;
+      const ahead2 = probe(m.x, m.y, Math.cos(m.h), Math.sin(m.h), 6, m);
+      if (ahead2 > 2.6 || last) steerTo(m, wp[0], wp[1], last ? 0.8 : 1.5, dt, 1.5);
+      else m.v = Math.max(0, m.v - 5 * dt);
+      // count it reached if she's close OR has driven past it, or she'll orbit forever
+      const past = (dxw * Math.cos(m.h) + dyw * Math.sin(m.h)) < 0;
+      if (near < (last ? 0.7 : 2.0) || (past && !last)) {
+        if (last) finishPark(m); else m.pi++;
+      }
+      // and if the whole business is taking too long, drive on and pretend she meant to
+      if (m.parkT > 22 || (m.bay && m.bay.veh && !last)) {
+        m.mode = 'roam'; m.parkIn = 40 + Math.random() * 60;
+      }
+      continue;
+    }
+
+    // roaming: does she fancy that space?
+    m.parkIn -= dt;
+    if (m.parkIn <= 0) {
+      const b = nearestFreeBay(m, 26);
+      if (b) {
+        const p = bayPose(b);
+        m.mode = 'park'; m.bay = b; m.pi = 0; m.parkT = 0;
+        m.path = [p.stage, p.door, p.mid];
+        continue;
+      }
+      m.parkIn = 12;                               // nothing doing, look again shortly
+    }
+
+    const lx = m.to.x - m.from.x, ly = m.to.y - m.from.y, ll = Math.hypot(lx, ly) || 1;
+    const d = Math.hypot(m.to.x - m.x, m.to.y - m.y);
+    if (d < 3) {
+      const nb = neighbours(m.to).filter(n => n !== m.from);
+      m.from = m.to; m.to = nb.length ? nb[Math.random() * nb.length | 0] : m.from;
+      if (Math.random() < 0.35) m.dither = 1.5 + Math.random() * 3;   // thinks it's spotted one
+      continue;
+    }
+    // She aims at a point up the lane, sitting over to one side but wandering
+    // about within it, which is what makes the pinch points unpredictable.
+    const along = Math.max(0, Math.min(1,
+      ((m.x - m.from.x) * lx + (m.y - m.from.y) * ly) / (ll * ll)));
+    const look = Math.min(1, along + 12 / ll);
+    let off = m.lane + Math.sin(worldT * m.wobF + m.wobP) * m.wobA;
+    off = Math.max(-3.4, Math.min(3.4, off));
+    const tx = m.from.x + lx * look + (ly / ll) * off;
+    const ty = m.from.y + ly * look - (lx / ll) * off;
+    let e = Math.atan2(ty - m.y, tx - m.x) - m.h;
+    while (e > Math.PI) e -= 6.2832; while (e < -Math.PI) e += 6.2832;
+    m.h += Math.max(-1.1 * dt, Math.min(1.1 * dt, e));
+    m.ang = m.h;
+    const ahead = probe(m.x, m.y, Math.cos(m.h), Math.sin(m.h), 13, m);
+    // every so often she just stops, for no reason anyone else can see
+    m.nextHalt -= dt;
+    if (m.nextHalt <= 0) { m.halt = 1.5 + Math.random() * 5; m.nextHalt = 25 + Math.random() * 55; }
+    const halted = m.halt > 0;
+    if (halted) m.halt -= dt;
+    const drift = 0.78 + 0.22 * Math.sin(worldT * m.spdF + m.spdP);   // speed never quite steady
+    let want = halted ? 0 : (m.dither > 0 ? 0.9 : m.cruise * drift);
+    if (ahead < 11) want = Math.min(want, want * (ahead - 3) / 8);
+    if (ahead < 4) want = 0;
+    // something's coming at her: stop and let it go past. Only when he's actually
+    // closing, or six stopped grannies gridlock the place.
+    const gx = car.x - m.x, gy = car.y - m.y, dc = Math.hypot(gx, gy);
+    const ch2 = Math.cos(car.h), sh2 = Math.sin(car.h);
+    const wvx = car.vx * ch2 - car.vy * sh2, wvy = car.vx * sh2 + car.vy * ch2;
+    if (dc < 13 && Math.hypot(wvx, wvy) > 5 && (gx * wvx + gy * wvy) < 0)
+      want = Math.min(want, 0.8);   // creep aside rather than plug the aisle dead
+    if (m.dither > 0) m.dither -= dt;
+    m.blocked = (want < 0.2 && !halted) ? m.blocked + dt : 0;   // a chosen stop isn't a jam
+    if (m.blocked > 5) {            // wedged nose to nose with something: turn round
+      const t = m.from; m.from = m.to; m.to = t; m.blocked = 0;
+    }
+    m.v += Math.max(-7 * dt, Math.min(2.2 * dt, want - m.v));
+    m.x += Math.cos(m.h) * m.v * dt; m.y += Math.sin(m.h) * m.v * dt;
+  }
+}
+
+/* ------------------------------------------------------------------- car */
+const M = 1120, IZ = 1750, L = 2.45, WB_F = 0.47, WB_R = 0.53;
+const LF = L * WB_R, LR = L * WB_F;
+const HCG = 0.56, G = 9.81;                 // sits high, so it shifts its weight about
+// Greasy: not much grip to start with, and it falls away sharply the moment
+// the contact patch starts sliding, which is what makes it so tail-happy.
+const MU_S = 1.05, MU_K = 0.45, MU_V = 1.1;
+const PB = 7.0, PC = 1.55;                  // softer tyre: more slip to make the same force
+const F_DRIVE = 6600, F_BRAKE = 13500, DRAG = 0.40, RRES = 0.017 * M * G;
+const MAX_STEER = 0.62, STEER_RATE = 4.6;   // slow rack: slides get away before he catches them
+const HALF_L = 2.05, HALF_W = 0.86;
+
+const car = { x: 0, y: 0, h: 0, vx: 0, vy: 0, r: 0, ax: 0, d: 0, af: 0, ar: 0, slip: 0 };
+const ctl = { steer: 0, thr: 0, brk: 0, hb: 0, rev: 0 };
+const jt = { phase: 'none', t: 0, h0: 0, dir: 1, cd: 0 };   // the escape manoeuvre
+const bl = { phase: 'none', t: 0, h0: 0, dir: 1, cd: 0 };   // the bail-out turn
+let gapAborted = false;
+const hbS = { t: 0, cd: 0 };            // handbrake timer and cooldown
+
+function placeCar() {
+  let sx = spawn.x, sy = spawn.y;
+  if (solid(sx | 0, sy | 0)) {
+    outer: for (let rad = 1; rad < 120; rad++)
+      for (let a = 0; a < 72; a++) {
+        const t = a / 72 * 6.2832, px = spawn.x + Math.cos(t) * rad, py = spawn.y + Math.sin(t) * rad;
+        if (!solid(px | 0, py | 0)) { sx = px; sy = py; break outer; }
+      }
+  }
+  car.x = sx; car.y = sy; car.h = spawn.h;
+  car.vx = 4; car.vy = 0; car.r = 0; car.ax = 0; car.d = 0;
+}
+
+function stepPhysics(dt) {
+  const want = Math.max(-MAX_STEER, Math.min(MAX_STEER, ctl.steer));
+  car.d += Math.max(-STEER_RATE * dt, Math.min(STEER_RATE * dt, want - car.d));
+  const d = car.d, sd = Math.sin(d), cd = Math.cos(d);
+
+  // Slip angles taken in each wheel's own frame against |v_long|, so the model
+  // stays honest when he's travelling backwards: the steered axle then trails,
+  // which is what makes a car unstable in reverse and a J-turn possible at all.
+  const sgn = car.vx >= 0 ? 1 : -1;
+  const fux = car.vx, fuy = car.vy + LF * car.r;
+  const flong = fux * cd + fuy * sd, flat = -fux * sd + fuy * cd;
+  const af = Math.atan2(flat, Math.max(Math.abs(flong), 1.2));
+  const rux = car.vx, ruy = car.vy - LR * car.r;
+  const ar = Math.atan2(ruy, Math.max(Math.abs(rux), 1.2));
+  car.af = af; car.ar = ar;
+
+  let Fzf = M * (G * LR - car.ax * HCG) / L;
+  let Fzr = M * (G * LF + car.ax * HCG) / L;
+  Fzf = Math.max(60, Fzf); Fzr = Math.max(60, Fzr);
+
+  const spdF = Math.hypot(car.vx, car.vy + LF * car.r) * Math.abs(Math.sin(af));
+  const spdR = Math.hypot(car.vx, car.vy - LR * car.r) * Math.abs(Math.sin(ar));
+  const muF = MU_K + (MU_S - MU_K) * Math.exp(-spdF / MU_V);
+  const muR = MU_K + (MU_S - MU_K) * Math.exp(-spdR / MU_V);
+  const capF = muF * Fzf, capR = muR * Fzr;
+
+  const braking = (Math.abs(car.vx) > 0.25) ? ctl.brk * F_BRAKE * sgn : 0;
+  let FxF = -braking * 0.62;                       // along the front wheel's own axis
+  let FxR = (ctl.rev > 0 ? -0.6 * ctl.rev : ctl.thr) * F_DRIVE - braking * 0.38;
+  const lim = (Fx, cap) => Math.max(-cap * 0.99, Math.min(cap * 0.99, Fx));
+  FxF = lim(FxF, capF); FxR = lim(FxR, capR);
+  const yMaxF = Math.sqrt(Math.max(0, capF * capF - FxF * FxF));
+  const yMaxR = Math.sqrt(Math.max(0, capR * capR - FxR * FxR));
+  let FyF = -capF * Math.sin(PC * Math.atan(PB * af));
+  let FyR = -capR * Math.sin(PC * Math.atan(PB * ar));
+  FyF = Math.max(-yMaxF, Math.min(yMaxF, FyF));
+  FyR = Math.max(-yMaxR, Math.min(yMaxR, FyR));
+
+  if (ctl.hb > 0.01) {
+    // a locked tyre stops steering and just opposes whichever way it's being dragged,
+    // so all of the rear's grip goes into fighting motion and none into holding the line
+    const vRx = car.vx, vRy = car.vy - LR * car.r;
+    const vR = Math.max(0.6, Math.hypot(vRx, vRy));
+    const cap = MU_K * 0.95 * Fzr;
+    FxR = FxR * (1 - ctl.hb) - cap * (vRx / vR) * ctl.hb;
+    FyR = FyR * (1 - ctl.hb) - cap * (vRy / vR) * ctl.hb;
+  }
+
+  const fbx = FxF * cd - FyF * sd, fby = FxF * sd + FyF * cd;   // front wheel -> body
+  const Fx = FxR + fbx - DRAG * car.vx * Math.abs(car.vx) - RRES * sgn;
+  const Fy = FyR + fby;
+  const Mz = LF * fby - LR * FyR;
+
+  car.ax = Fx / M;
+  car.vx += (car.ax + car.r * car.vy) * dt;
+  car.vy += (Fy / M - car.r * car.vx) * dt;
+  car.r += Mz / IZ * dt;
+  if (Math.abs(car.vx) < 0.06 && ctl.thr < 0.02 && ctl.rev < 0.02) { car.vx = 0; car.vy *= 0.4; }
+
+  car.h += car.r * dt;
+  const ch = Math.cos(car.h), sh = Math.sin(car.h);
+  car.x += (car.vx * ch - car.vy * sh) * dt;
+  car.y += (car.vx * sh + car.vy * ch) * dt;
+  car.slip = Math.atan2(-car.vy, Math.max(1, Math.abs(car.vx)));
+  collide();
+}
+
+/* -------------------------------------------------------------- collision */
+let trialImpact = 0, hitFlash = 0, stepImpact = 0, hitRear = false, hitFront = false;
+const CORN = [[HALF_L, HALF_W], [HALF_L, -HALF_W], [-HALF_L, -HALF_W], [-HALF_L, HALF_W]];
+
+/* ------------------------------------------------ smoothing the edges
+   A 1m grid turns every diagonal wall into a staircase, and the normal at a
+   step face points straight along an axis, so a car meant to be glancing off a
+   45 degree kerb gets hit square instead. So the world keeps a signed distance
+   field: how far each point is from the nearest solid, negative inside it.
+   Sampled between cells it gives a smooth normal and an exact penetration
+   depth, and a diagonal reads as a diagonal. */
+const sdf = new Float32Array(GW * GH);
+const _dOut = new Float32Array(GW * GH), _dIn = new Float32Array(GW * GH);
+const BIG = 1e5;
+
+function chamfer(d) {                       // two-pass approximate euclidean transform
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const i = y * GW + x; let v = d[i];
+    if (x > 0) v = Math.min(v, d[i - 1] + 1);
+    if (y > 0) v = Math.min(v, d[i - GW] + 1);
+    if (x > 0 && y > 0) v = Math.min(v, d[i - GW - 1] + 1.4142);
+    if (x < GW - 1 && y > 0) v = Math.min(v, d[i - GW + 1] + 1.4142);
+    d[i] = v;
+  }
+  for (let y = GH - 1; y >= 0; y--) for (let x = GW - 1; x >= 0; x--) {
+    const i = y * GW + x; let v = d[i];
+    if (x < GW - 1) v = Math.min(v, d[i + 1] + 1);
+    if (y < GH - 1) v = Math.min(v, d[i + GW] + 1);
+    if (x < GW - 1 && y < GH - 1) v = Math.min(v, d[i + GW + 1] + 1.4142);
+    if (x > 0 && y < GH - 1) v = Math.min(v, d[i + GW - 1] + 1.4142);
+    d[i] = v;
+  }
+}
+
+function buildSDF() {
+  for (let i = 0; i < GW * GH; i++) {
+    const s = grid[i];
+    _dOut[i] = s ? 0 : BIG;                 // distance from open ground to the nearest solid
+    _dIn[i] = s ? BIG : 0;                  // and from solid out to the nearest open
+  }
+  chamfer(_dOut); chamfer(_dIn);
+  for (let i = 0; i < GW * GH; i++) sdf[i] = _dOut[i] - _dIn[i];
+  // The chamfer transform ripples slightly, and the ripple shows up in the
+  // gradient as a wobbly normal. One blur pass irons it out.
+  for (let y = 1; y < GH - 1; y++) for (let x = 1; x < GW - 1; x++) {
+    const i = y * GW + x;
+    _dOut[i] = (sdf[i] * 4 + sdf[i - 1] + sdf[i + 1] + sdf[i - GW] + sdf[i + GW] +
+                0.5 * (sdf[i - GW - 1] + sdf[i - GW + 1] + sdf[i + GW - 1] + sdf[i + GW + 1])) / 10;
+  }
+  for (let y = 1; y < GH - 1; y++) for (let x = 1; x < GW - 1; x++) sdf[y * GW + x] = _dOut[y * GW + x];
+}
+
+function sdfAt(x, y) {                      // bilinear, so it varies smoothly between cells
+  const fx = x - 0.5, fy = y - 0.5;
+  let i0 = Math.floor(fx), j0 = Math.floor(fy);
+  const tx = fx - i0, ty = fy - j0;
+  const cl = (i, j) => {
+    if (i < 0 || j < 0 || i >= GW || j >= GH) return -6;    // outside the world is solid
+    return sdf[j * GW + i];
+  };
+  const s00 = cl(i0, j0), s10 = cl(i0 + 1, j0), s01 = cl(i0, j0 + 1), s11 = cl(i0 + 1, j0 + 1);
+  return (s00 * (1 - tx) + s10 * tx) * (1 - ty) + (s01 * (1 - tx) + s11 * tx) * ty;
+}
+
+function sdfNormal(x, y) {                  // central differences: points away from the solid
+  const e = 0.7;
+  const gx = sdfAt(x + e, y) - sdfAt(x - e, y);
+  const gy = sdfAt(x, y + e) - sdfAt(x, y - e);
+  const m = Math.hypot(gx, gy);
+  return m < 1e-6 ? [0, -1] : [gx / m, gy / m];
+}
+
+function normalAt(px, py) {
+  let nx = 0, ny = 0;
+  const gx = px | 0, gy = py | 0;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++)
+    if (solid(gx + dx, gy + dy)) { nx -= dx; ny -= dy; }
+  const m = Math.hypot(nx, ny);
+  return m < 1e-6 ? [0, -1] : [nx / m, ny / m];
+}
+
+function collide() {
+  const ch = Math.cos(car.h), sh = Math.sin(car.h);
+  if (ghosting) {                                // a ghost that hits something is simply dead
+    for (const [bx, by] of CORN) {
+      const px = car.x + bx * ch - by * sh, py = car.y + bx * sh + by * ch;
+      if (solid(px | 0, py | 0) || moverAt(px, py, null)) {
+        const v = Math.hypot(car.vx, car.vy);
+        ghostImpact += 0.5 * M * v * v / 1000;
+        car.vx = 0; car.vy = 0; car.r = 0;
+        return;
+      }
+    }
+    return;
+  }
+  for (let pass = 0; pass < 4; pass++) {
+    let hx = 0, hy = 0, n = 0, deep = 0;
+    let hitCar = -1, hcx = 0, hcy = 0, terrain = 0, hard = 0;
+    for (let ci = 0; ci < 4; ci++) {
+      const bx = CORN[ci][0], by = CORN[ci][1];
+      const px = car.x + bx * ch - by * sh, py = car.y + bx * sh + by * ch;
+      let touched = false;
+      const s = sdfAt(px, py);
+      if (s < 0) {                                   // how far in, and which way out
+        const nn = sdfNormal(px, py), d = -s;
+        hx += nn[0] * d; hy += nn[1] * d; n++; touched = true;
+        if (d > deep) deep = d;
+        // whose surface is it? look just inside, along the way out
+        const qx = (px - nn[0] * 0.7) | 0, qy = (py - nn[1] * 0.7) | 0;
+        const oi = (qx >= 0 && qy >= 0 && qx < GW && qy < GH) ? owner[qy * GW + qx] : -1;
+        if (oi >= 0) { hitCar = oi; hcx = px; hcy = py; hard++; } else terrain++;
+      } else {
+        const m = moverAt(px, py, null);
+        if (m) { const nn = moverNormal(m, px, py); hx += nn[0]; hy += nn[1]; n++; touched = true;
+                 m.v = 0; m.dither = 4; hard++; deep = Math.max(deep, 0.3); }
+      }
+      if (touched) { if (bx < 0) hitRear = true; else hitFront = true; }
+    }
+    if (!n) return;
+    const m = Math.hypot(hx, hy) || 1, nx = hx / m, ny = hy / m;
+    // Kerbs are sloped, not vertical: only the terrain counts as a kerb, a parked
+    // car is still something you hit.
+    const kerb = terrain > 0 && hard === 0;
+    // Separate by exactly how far in he is, rather than shoving a fixed distance:
+    // a barely-touched corner gets barely moved.
+    const push = Math.min(0.7, deep + 0.02);
+    car.x += nx * push; car.y += ny * push;
+    let wx = car.vx * ch - car.vy * sh, wy = car.vx * sh + car.vy * ch;
+    const vn = wx * nx + wy * ny;
+    if (vn < 0) {
+      const tx = -ny, ty = nx;
+      if (kerb) {
+        /* A 45 degree kerb doesn't stop him, it turns his speed along itself and
+           feeds a bit back outward, so he glances off and keeps rolling instead
+           of being caught and held against a vertical face. */
+        const e = 0.5 * M * vn * vn / 1000 * 0.3;   // a graze, not a shunt
+        trialImpact += e; stepImpact += e;
+        hitFlash = Math.min(1, hitFlash + Math.abs(vn) / 26);
+        wx += (-0.55 * vn + 0.8) * nx; wy += (-0.55 * vn + 0.8) * ny;
+        const vt = wx * tx + wy * ty;
+        wx -= vt * 0.04 * tx; wy -= vt * 0.04 * ty;   // barely scrubbed
+        car.r *= 0.95;                                 // and it doesn't kill the rotation
+      } else {
+        const e = 0.5 * M * vn * vn / 1000;
+        trialImpact += e; stepImpact += e;
+        gap.clean = false;                           // no credit for a thread he crashed
+        hitFlash = Math.min(1, hitFlash + Math.abs(vn) / 14);
+        // Against a parked car it's a two-body problem: a Micra gets launched and
+        // barely slows him, an artic may as well be the wall.
+        let bounce = 1.35;
+        if (hitCar >= 0 && vehicles[hitCar]) {
+          const v2 = vehicles[hitCar];
+          if (vn < -1.0) { shunt(v2, hcx, hcy, nx, ny, vn); bounce = 1 + 0.35 * (v2.mass / (v2.mass + M)); }
+        }
+        wx -= bounce * vn * nx; wy -= bounce * vn * ny;
+        const vt = wx * tx + wy * ty;
+        wx -= vt * 0.22 * tx; wy -= vt * 0.22 * ty;
+        car.r *= 0.6;
+      }
+    }
+    car.vx = wx * ch + wy * sh; car.vy = -wx * sh + wy * ch;
+  }
+}
+
+/* ------------------------------------------------------------- perception */
+const rays = [];
+function probe(x, y, cx, cy, len, skip) {
+  for (let t = 1.0; t <= len; t += 0.9) {
+    const px = x + cx * t, py = y + cy * t;
+    if (solid(px | 0, py | 0) || moverAt(px, py, skip)) return t;
+  }
+  return len;
+}
+function castRays(nR, fan, len, centre) {
+  rays.length = 0;
+  for (let i = 0; i < nR; i++) {
+    const loc = nR === 1 ? 0 : (-fan / 2 + fan * i / (nR - 1));   // where in the fan
+    const a = loc + centre;                                        // relative to the nose
+    const wa = car.h + a;
+    const cw = Math.cos(wa), sw2 = Math.sin(wa);
+    const dist = probe(car.x, car.y, cw, sw2, len, null);
+    rays.push({ a, local: loc, d: dist, nd: dist / len, cx: cw, cy: sw2 });
+  }
+}
+
+/* ------------------------------------------------------------------ brain */
+/* Defaults are no longer a naive driver: these are the genetics of the best of
+   five three-hour runs, chosen by how it scored on car parks it had never seen
+   rather than on the one it trained in. He still evolves from here. */
+const GENES = [
+  ['rays',      5,   17,  8.137,    'eyes'],
+  ['fan',       0.6, 4.9, 0.791,  'rad'],
+  ['reach',     18,  95,  51.528,   'm'],
+  ['aim',       0.4, 3.5, 2.016,  ''],
+  ['bias',     -0.5, 0.5, 0.17,    ''],
+  ['steer',     0.5, 4.2, 0.95,  ''],
+  ['yawDamp',   0,   0.7, 0.186, ''],
+  ['vClear',    0.12,1.3, 0.876,  ''],
+  ['brake',     0.1, 2.2, 1.564,  ''],
+  ['holdSlide', 0,   1,   0,  ''],
+  ['focus',     0,   4,   0.375,  ''],
+  ['hbAim',     0.15,0.9, 0.78, 'rad'],
+  ['bailMargin',0.5, 2.0, 0.64,  ''],
+  ['bailSpeed', 4,   18,  4.04,    'm/s'],
+  ['boredom',   0,   3,   0.657,  ''],
+  ['thinkTrust',0,   1,   0.454,  ''],
+  ['thinkNerve',0.5, 6,   1.379,  ''],
+  ['lineBold',  0,   1,   0.462, ''],
+  ['badVibes',  0.4, 4,   0.889,  ''],   // floored: with no bad ground early on this
+];
+/* Genes cut after measuring how much each one actually moved his score: the
+   bottom 60% barely registered, so they're pinned at the values evolution had
+   already settled on. Same behaviour, a search space less than half the size. */
+const K_ctrSteer = 0.5866;
+const K_slipWant = 0.1181;
+const K_vTop = 16.8824;
+const K_throttle = 0.8604;
+const K_gaze = 1.4025;
+const K_hbSpeed = 11.3568;
+const K_hbHold = 0.35;
+const K_hbCatch = 0.6;
+const K_hbGate = 0.1334;
+const K_gapRange = 28.1325;
+const K_gapNerve = 1.3;
+const K_gapHold = 1.0253;
+const K_gapSeek = 0.1046;
+const K_gapPicky = 2.1;
+const K_gapExit = 1.0564;
+const K_jSpeed = 6.0;
+const K_jLock = 1.0;
+const K_jHold = 0.05;
+const K_jExit = 2.6;
+const K_jCatch = 0.8;
+const K_bailLock = 0.9955;
+const K_bailTurn = 1.2187;
+const K_bailOut = 0.4514;
+const K_patience = 40;
+const K_thinkAhead = 1.8247;
+const K_thinkWide = 0.3033;
+const K_lineTrust = 0.0721;
+const K_grudge = 420;
+const NG = GENES.length;
+const GI = {};                      // name -> index, so edits can't shift each other
+GENES.forEach((g, i) => { GI[g[0]] = i; });
+function freshGenome() { return GENES.map(g => g[3]); }
+function clampGene(v, i) { return Math.max(GENES[i][1], Math.min(GENES[i][2], v)); }
+function gauss() { return (Math.random() + Math.random() + Math.random() + Math.random() - 2) * 0.9; }
+
+const brain = { best: freshGenome(), cand: freshGenome(), mode: 'best',
+  bestScore: -1e9, sigma: 0.16, gen: 1, verdict: '—', accepted: 0,
+  hof: freshGenome(), hofScore: -1e9, slump: 0 };
+
+function mutate() {
+  brain.cand = brain.best.map((v, i) => {
+    if (Math.random() > 0.55) return v;
+    const span = GENES[i][2] - GENES[i][1];
+    return clampGene(v + gauss() * brain.sigma * span, i);
+  });
+}
+function wipeBrain() {
+  brain.best = freshGenome(); brain.cand = freshGenome();
+  brain.bestScore = -1e9; brain.sigma = 0.16; brain.gen = 1;
+  brain.verdict = 'wiped'; brain.accepted = 0; brain.mode = 'best';
+  brain.hof = freshGenome(); brain.hofScore = -1e9; brain.slump = 0;
+  startTrial();
+}
+
+/* ------------------------------------------------------- the racing line
+   Searches the lattice a hundred metres ahead for the straightest way through,
+   fits a spline to it, and reads the curvature off it. That curvature, not how
+   close the parked cars are, is what sets his speed: a line that threads dead
+   straight between two of them has no curvature, so there's no reason to lift. */
+const LINE = { pts: [], kap: [], t: 0, ok: false, minR: 999, aim: 0, cap: 99 };
+const LINE_STRAIGHT = 2.0, LINE_LOOK = 22, LINE_GRIP = 0.75;   // fixed: not worth a gene each
+
+function nearestNode(x, y) {
+  let best = 0, bd = 1e9;
+  for (let i = 0; i < LN.length; i++) {
+    const d = (LN[i].x - x) * (LN[i].x - x) + (LN[i].y - y) * (LN[i].y - y);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+function routeAhead(g) {
+  const turnW = LINE_STRAIGHT, depth = 6;
+  const s = nearestNode(car.x, car.y);
+  let beam = [{ path: [s], last: -1, dir: car.h, score: 0 }];
+  for (let step = 0; step < depth; step++) {
+    const next = [];
+    for (const b of beam) {
+      const i = b.path[b.path.length - 1];
+      for (const j of LE[i]) {
+        if (j === b.last) continue;                       // no doubling back
+        const dx = LN[j].x - LN[i].x, dy = LN[j].y - LN[i].y;
+        const len = Math.hypot(dx, dy), dir = Math.atan2(dy, dx);
+        let turn = dir - b.dir;
+        while (turn > Math.PI) turn -= 6.2832; while (turn < -Math.PI) turn += 6.2832;
+        if (Math.abs(turn) > 2.2) continue;               // that would be a handbrake job
+        next.push({ path: b.path.concat(j), last: i, dir: dir,
+                    score: b.score + len - turnW * Math.abs(turn) * 12 });
+      }
+    }
+    if (!next.length) break;
+    next.sort((a2, b2) => b2.score - a2.score);
+    beam = next.slice(0, 6);
+  }
+  return beam.length ? beam[0].path : [s];
+}
+
+function catmull(p0, p1, p2, p3, t) {                     // one spline sample
+  const t2 = t * t, t3 = t2 * t;
+  return [0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t +
+          (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 +
+          (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+          0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t +
+          (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
+          (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)];
+}
+
+function buildLine(g) {
+  const route = routeAhead(g);
+  const knots = [[car.x, car.y]];
+  for (const i of route) {
+    const q = knots[knots.length - 1];
+    if (Math.hypot(LN[i].x - q[0], LN[i].y - q[1]) > 3) knots.push([LN[i].x, LN[i].y]);
+  }
+  if (knots.length < 3) { LINE.ok = false; return; }
+
+  /* Lattice waypoints sit in the middle of every aisle, so splining straight
+     through them puts a near-cusp at each junction. Relax the polyline first and
+     the right angles open out into a flowing line that cuts the corners, which
+     is the whole point of a racing line. Any point that relaxes into a parked car
+     is put back where it was. */
+  const roomAt = (x, y) => {
+    if (solid(x | 0, y | 0)) return false;
+    for (const [ox, oy] of [[1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6]])
+      if (solid((x + ox) | 0, (y + oy) | 0)) return false;
+    return true;
+  };
+  for (let pass = 0; pass < 8; pass++) {
+    for (let i = 1; i < knots.length - 1; i++) {
+      const nx = knots[i][0] * 0.5 + (knots[i - 1][0] + knots[i + 1][0]) * 0.25;
+      const ny = knots[i][1] * 0.5 + (knots[i - 1][1] + knots[i + 1][1]) * 0.25;
+      if (roomAt(nx, ny)) { knots[i][0] = nx; knots[i][1] = ny; }
+    }
+  }
+
+  knots.unshift([2 * knots[0][0] - knots[1][0], 2 * knots[0][1] - knots[1][1]]);
+  knots.push([2 * knots[knots.length - 1][0] - knots[knots.length - 2][0],
+              2 * knots[knots.length - 1][1] - knots[knots.length - 2][1]]);
+  LINE.pts.length = 0;
+  for (let k = 1; k < knots.length - 2; k++)
+    for (let s = 0; s < 6; s++)
+      LINE.pts.push(catmull(knots[k - 1], knots[k], knots[k + 1], knots[k + 2], s / 6));
+  LINE.pts.push(knots[knots.length - 2]);
+  // curvature from the circle through each three consecutive samples
+  LINE.kap.length = 0;
+  for (let i = 0; i < LINE.pts.length; i++) {
+    if (i === 0 || i === LINE.pts.length - 1) { LINE.kap.push(0); continue; }
+    const a2 = LINE.pts[i - 1], b2 = LINE.pts[i], c2 = LINE.pts[i + 1];
+    const A = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+    const B = Math.hypot(c2[0] - b2[0], c2[1] - b2[1]);
+    const C = Math.hypot(c2[0] - a2[0], c2[1] - a2[1]);
+    const area = Math.abs((b2[0] - a2[0]) * (c2[1] - a2[1]) - (c2[0] - a2[0]) * (b2[1] - a2[1])) / 2;
+    LINE.kap.push(A * B * C > 1e-6 ? 4 * area / (A * B * C) : 0);
+  }
+  LINE.ok = true;
+}
+
+/* Where the line points from here, and how fast its curvature allows. */
+function readLine(g) {
+  if (!LINE.ok || LINE.pts.length < 4) { LINE.aim = 0; LINE.cap = 99; return; }
+  let near = 0, nd = 1e9;
+  for (let i = 0; i < LINE.pts.length; i++) {
+    const d = (LINE.pts[i][0] - car.x) ** 2 + (LINE.pts[i][1] - car.y) ** 2;
+    if (d < nd) { nd = d; near = i; }
+  }
+  const spd = Math.hypot(car.vx, car.vy);
+  // aim at a point up the line
+  let acc = 0, look = near;
+  while (look < LINE.pts.length - 1 && acc < LINE_LOOK) {
+    acc += Math.hypot(LINE.pts[look + 1][0] - LINE.pts[look][0],
+                      LINE.pts[look + 1][1] - LINE.pts[look][1]);
+    look++;
+  }
+  let want = Math.atan2(LINE.pts[look][1] - car.y, LINE.pts[look][0] - car.x) - car.h;
+  while (want > Math.PI) want -= 6.2832; while (want < -Math.PI) want += 6.2832;
+  LINE.aim = want;
+  // tightest bend within the next couple of seconds sets the speed
+  let ahead = 0, worst = 0;
+  for (let i = near; i < LINE.kap.length - 1 && ahead < Math.max(14, spd * 2.2); i++) {
+    ahead += Math.hypot(LINE.pts[i + 1][0] - LINE.pts[i][0], LINE.pts[i + 1][1] - LINE.pts[i][1]);
+    if (LINE.kap[i] > worst) worst = LINE.kap[i];
+  }
+  LINE.minR = worst > 1e-4 ? Math.max(4, 1 / worst) : 999;   // 4m is tighter than the car turns anyway
+  LINE.cap = Math.sqrt(Math.max(1, LINE_GRIP * 9.81 * LINE.minR));
+}
+
+/* --------------------------------------------------------- close calls
+   How much room the back end had as it came past something. A near miss is an
+   event, not a state: he gets credit for the closest point of a pass, so he
+   can't just ride along a wall collecting it. A light scuff off the rear
+   corner while sideways is forgiven rather than charged for. */
+const enc = { on: false, min: 9, spd: 0, slip: 0, kissed: false, t: 0 };
+let nearMiss = 0;
+
+function rearRoom() {
+  const ch = Math.cos(car.h), sh = Math.sin(car.h);
+  let best = 9;
+  for (const s of [1, -1]) {
+    const bx = -HALF_L, by = s * HALF_W;
+    const cx0 = car.x + bx * ch - by * sh, cy0 = car.y + bx * sh + by * ch;
+    const ox = -s * sh, oy = s * ch;               // straight out of that flank
+    for (let t = 0.25; t <= 2.5; t += 0.25) {
+      const px = cx0 + ox * t, py = cy0 + oy * t;
+      if (solid(px | 0, py | 0) || moverAt(px, py, null)) { if (t < best) best = t; break; }
+    }
+  }
+  return best;
+}
+
+function closeCalls(dt) {
+  const spd = Math.hypot(car.vx, car.vy);
+  const room = rearRoom();
+  if (room < 1.5 && spd > 5) {
+    enc.on = true; enc.t += dt;
+    if (room < enc.min) { enc.min = room; enc.spd = spd; enc.slip = Math.abs(car.slip); }
+  } else if (enc.on && (room > 2.4 || spd <= 5 || enc.t > 2.5)) {
+    const slipN = Math.min(1, enc.slip / 0.45);
+    const tightness = Math.pow(1 - enc.min / 1.5, 1.5);
+    // Sideways is the point: a close call at an angle is skill, in a straight line it's luck.
+    const credit = tightness * (enc.spd / 16) * (0.25 + 1.75 * slipN) * (enc.kissed ? 1.3 : 1);
+    nearMiss += Math.min(1.0, credit);
+    enc.on = false; enc.min = 9; enc.t = 0; enc.kissed = false;
+  }
+}
+
+/* ------------------------------------------------------ looking ahead
+   Five ghost Truenos are launched down slightly different lines and run
+   forward through the real physics. Whichever carries the most speed
+   without hitting anything wins, and his line is the one taken. */
+let ghosting = false, ghostImpact = 0;
+const GH_DT = 1 / 30;                      // coarse, but under a metre out over two seconds
+const PLAN = { bias: 0, pace: 1, t: 0, paths: [], win: -1, scores: [] };
+const gRay = [];
+
+function ghostCast(g, len) {
+  gRay.length = 0;
+  const fan = Math.min(g[GI.fan], 2.4), n = 7;
+  const gz = Math.max(-1.3, Math.min(1.3, -K_gaze * car.slip));
+  for (let i = 0; i < n; i++) {
+    const loc = -fan / 2 + fan * i / (n - 1), wa = car.h + loc + gz;
+    const cw = Math.cos(wa), sw2 = Math.sin(wa);
+    let d = len;
+    // fine stride close in, where stepping over a 1.8m wide car actually matters,
+    // coarse further out where it only needs to know roughly where the road ends
+    for (let t = 1.2; t <= len; t += (t < 14 ? 1.1 : 2.2)) {
+      const px = car.x + cw * t, py = car.y + sw2 * t;
+      if (solid(px | 0, py | 0) || moverAt(px, py, null)) { d = t; break; }
+    }
+    gRay.push({ a: loc + gz, local: loc, nd: d / len, d: d });
+  }
+}
+
+function ghostControl(g, bias, pace) {
+  const len = Math.min(g[GI.reach], 34);
+  ghostCast(g, len);
+  let ws = 0, wa = 0;
+  for (const rr of gRay) {
+    const centred = Math.pow(0.5 + 0.5 * Math.cos(rr.local), g[GI.focus]);
+    const look = Math.min(rr.d, 24);
+    const dd = 1 + g[GI.badVibes] * dreadAt(car.x + Math.cos(car.h + rr.a) * look,
+                                   car.y + Math.sin(car.h + rr.a) * look);
+    const w = Math.pow(Math.max(0.001, rr.nd), g[GI.aim]) * centred / dd;
+    ws += w; wa += w * rr.a;
+  }
+  let aim = (ws ? wa / ws : 0) + g[GI.bias] * g[GI.fan] * 0.5 + bias;
+  if (LINE.ok && LINE.pts.length > 3) {            // ghosts follow the strategy too
+    let nr = 0, nd2 = 1e9;
+    for (let i = 0; i < LINE.pts.length; i += 2) {
+      const d = (LINE.pts[i][0] - car.x) ** 2 + (LINE.pts[i][1] - car.y) ** 2;
+      if (d < nd2) { nd2 = d; nr = i; }
+    }
+    const tgt = LINE.pts[Math.min(LINE.pts.length - 1, nr + 4)];
+    let w2 = Math.atan2(tgt[1] - car.y, tgt[0] - car.x) - car.h;
+    while (w2 > Math.PI) w2 -= 6.2832; while (w2 < -Math.PI) w2 += 6.2832;
+    let nearest = gRay[0];                          // is that way open from here?
+    for (const rr of gRay) if (Math.abs(rr.a - w2) < Math.abs(nearest.a - w2)) nearest = rr;
+    if (nearest.nd > 0.4) aim = aim * (1 - K_lineTrust) + (w2 + bias) * K_lineTrust;
+  }
+  let aimR = gRay[0], noseR = gRay[0];
+  for (const rr of gRay) {
+    if (Math.abs(rr.a - aim) < Math.abs(aimR.a - aim)) aimR = rr;
+    if (Math.abs(rr.a) < Math.abs(noseR.a)) noseR = rr;
+  }
+  const fwd = Math.min(aimR.d, noseR.d);
+  const st = K_slipWant, ex = car.ar - Math.max(-st, Math.min(st, car.ar));
+  ctl.steer = Math.max(-MAX_STEER, Math.min(MAX_STEER, g[GI.steer] * aim - g[GI.yawDamp] * car.r + K_ctrSteer * ex));
+  const err = Math.min(K_vTop, g[GI.vClear] * fwd) * pace - car.vx;
+  if (err > 0) { ctl.thr = Math.min(1, K_throttle * err / 9); ctl.brk = 0; }
+  else { ctl.brk = Math.min(1, g[GI.brake] * -err / 9); ctl.thr = 0; }
+  if (Math.abs(car.ar) > st) ctl.thr = Math.max(ctl.thr, g[GI.holdSlide]);
+  ctl.hb = 0; ctl.rev = 0;
+}
+
+const SNAP = {};
+function snapCar() {
+  SNAP.x = car.x; SNAP.y = car.y; SNAP.h = car.h; SNAP.vx = car.vx; SNAP.vy = car.vy;
+  SNAP.r = car.r; SNAP.ax = car.ax; SNAP.d = car.d; SNAP.slip = car.slip;
+  SNAP.af = car.af; SNAP.ar = car.ar;
+  SNAP.st = ctl.steer; SNAP.th = ctl.thr; SNAP.bk = ctl.brk; SNAP.hb = ctl.hb; SNAP.rv = ctl.rev;
+}
+function restoreCar() {
+  car.x = SNAP.x; car.y = SNAP.y; car.h = SNAP.h; car.vx = SNAP.vx; car.vy = SNAP.vy;
+  car.r = SNAP.r; car.ax = SNAP.ax; car.d = SNAP.d; car.slip = SNAP.slip;
+  car.af = SNAP.af; car.ar = SNAP.ar;
+  ctl.steer = SNAP.st; ctl.thr = SNAP.th; ctl.brk = SNAP.bk; ctl.hb = SNAP.hb; ctl.rev = SNAP.rv;
+}
+
+function plan(g) {
+  const horizon = K_thinkAhead, spread = K_thinkWide, nerve = g[GI.thinkNerve];
+  const steps = Math.max(6, Math.round(horizon / GH_DT));
+  const keep = Math.max(1, Math.round(steps / 9));
+  PLAN.paths.length = 0; PLAN.scores.length = 0;
+  // Each ghost proposes a line AND a pace. The pace options are the whole point:
+  // a driver who only reacts to clearance can never decide to slow down early
+  // for something two seconds away, or to commit harder because it's clear.
+  const cand = [
+    [PLAN.bias, 1.0],                    // carry on as planned
+    [PLAN.bias - spread, 1.0],
+    [PLAN.bias + spread, 1.0],
+    [PLAN.bias, 0.65],                   // same line, ease off
+    [PLAN.bias, 1.25]                    // same line, press on
+  ];
+  let bestScore = -1e9, bestBias = 0, bestPace = 1, bestIdx = 0;
+  snapCar();
+  // Only the traffic he could plausibly reach matters, and it is carried forward
+  // through the forecast at its current speed. Freezing it makes him swerve around
+  // grannies who are already leaving and drive into ones who are crossing.
+  const reach = Math.hypot(car.vx, car.vy) * horizon + 30;
+  const seed = movers.filter(m => Math.hypot(m.x - car.x, m.y - car.y) < reach)
+    .map(m => ({ x: m.x, y: m.y, h: m.h, v: m.v, L: m.L, W: m.W }));
+  mvNear = seed.map(s => ({ x: 0, y: 0, h: s.h, v: s.v, L: s.L, W: s.W }));
+  ghosting = true;
+  for (let i = 0; i < 5; i++) {
+    const bias = Math.max(-1.2, Math.min(1.2, cand[i][0])), pace = cand[i][1];
+    restoreCar();
+    for (let j = 0; j < seed.length; j++) {        // rewind the traffic for each ghost
+      mvNear[j].x = seed[j].x; mvNear[j].y = seed[j].y; mvNear[j].h = seed[j].h;
+    }
+    ghostImpact = 0;
+    let dist = 0;
+    const path = [car.x, car.y];
+    for (let k = 0; k < steps; k++) {
+      ghostControl(g, bias, pace);
+      const px = car.x, py = car.y;
+      stepPhysics(GH_DT);
+      for (const m of mvNear) {                    // and roll it along with him
+        m.x += Math.cos(m.h) * m.v * GH_DT;
+        m.y += Math.sin(m.h) * m.v * GH_DT;
+      }
+      dist += Math.hypot(car.x - px, car.y - py);
+      if (k % keep === 0) path.push(car.x, car.y);
+      if (ghostImpact > 0.5) break;                  // wrote it off, stop wasting thought
+    }
+    path.push(car.x, car.y);
+    // Terminal cost: a forecast that ends fast and committed into a dead end is
+    // worthless, even though it covered the most ground. Without this he always
+    // votes to press on, because the crash happens just past the horizon.
+    const endSpd = Math.hypot(car.vx, car.vy);
+    const clear = probe(car.x, car.y, Math.cos(car.h), Math.sin(car.h), 70, null);
+    const overrun = Math.max(0, endSpd * endSpd / 23.6 - clear);
+    // Judged on the speed he's still carrying at the horizon, not the ground he
+    // covered getting there. Distance rewards a quick burst into a dead end;
+    // carried speed rewards a line that actually flows.
+    const s = endSpd * 3.0 + dist * 0.25 - nerve * ghostImpact - overrun * 2.0;
+    PLAN.paths.push(path); PLAN.scores.push(s);
+    if (s > bestScore) { bestScore = s; bestBias = bias; bestPace = pace; bestIdx = i; }
+  }
+  ghosting = false;
+  mvNear = null;
+  restoreCar();
+  PLAN.bias = bestBias; PLAN.pace = bestPace; PLAN.win = bestIdx;
+}
+
+/* --------------------------------------------------------- the gap finder
+   Sweeps for openings ahead, works out how wide the car actually is at the
+   angle it is currently travelling, and locks the tightest one that fits.
+   Paid out only on the far side, and only if he did not touch anything. */
+const gap = { on: false, t: 0, cd: 0, cx: 0, cy: 0, lx: 0, ly: 0, rx: 0, ry: 0,
+              w: 0, sw: 0, dx: 0, dy: 0, clean: true,
+              need: 0, out: 0, recheck: 0, ex: 0, ey: 0, eang: 0 };
+let thread = 0, abandons = 0;
+
+function sweptWidth(beta) {              // a sideways car needs a wider hole
+  return 4.1 * Math.abs(Math.sin(beta)) + 1.72 * Math.abs(Math.cos(beta));
+}
+/* Looks past a candidate gap: steps just beyond it, fans out, and reports the
+   best onward route. A hole he fits through is no use if he lands nose-first
+   into a Transit with no room to slow down. */
+function beyond(cx, cy, dx, dy, range) {
+  const ox = cx + dx * 2.6, oy = cy + dy * 2.6;
+  if (solid(ox | 0, oy | 0) || moverAt(ox, oy, null)) return { clear: 0, ang: 0 };
+  const base = Math.atan2(dy, dx);
+  let best = 0, bestA = base;
+  for (let k = -2; k <= 2; k++) {
+    const a = base + k * 0.38;
+    const d = probe(ox, oy, Math.cos(a), Math.sin(a), range, null);
+    if (d > best) { best = d; bestA = a; }
+  }
+  return { clear: best, ang: bestA, x: ox, y: oy };
+}
+
+function findGap(g) {
+  const beta = Math.atan2(car.vy, Math.max(0.4, Math.abs(car.vx)));
+  const vdir = car.h - beta;                            // where he is actually travelling
+  const sw = sweptWidth(beta), range = K_gapRange, need = sw * K_gapNerve;
+  const tooWide = need * K_gapPicky;         // an open aisle is not a gap worth locking
+  const N = 21, arc = 1.7, step = arc / (N - 1);
+  const d = [], a = [];
+  for (let i = 0; i < N; i++) {
+    const ang = vdir - arc / 2 + step * i;
+    a.push(ang); d.push(probe(car.x, car.y, Math.cos(ang), Math.sin(ang), range, null));
+  }
+  const cands = [];
+  for (let i = 1; i < N - 1; i++) {
+    if (d[i] < 7) continue;
+    let j = i;
+    while (j + 1 < N - 1 && d[j + 1] >= 7) j++;
+    // Put both gateposts at the nearer shoulder's distance, so the gate is a real
+    // line across his path. Taking the raw hit points instead puts the midpoint
+    // inside a parked car whenever one shoulder is far further away than the other.
+    const dg = Math.min(d[i - 1], d[j + 1]);
+    const lxp = car.x + Math.cos(a[i - 1]) * dg, lyp = car.y + Math.sin(a[i - 1]) * dg;
+    const rxp = car.x + Math.cos(a[j + 1]) * dg, ryp = car.y + Math.sin(a[j + 1]) * dg;
+    const w = Math.hypot(rxp - lxp, ryp - lyp);
+    if (w > need && w < tooWide)                       // fits, and tight enough to be worth it
+      cands.push({ w: w, lx: lxp, ly: lyp, rx: rxp, ry: ryp,
+                   cx: (lxp + rxp) / 2, cy: (lyp + ryp) / 2 });
+    i = j;
+  }
+  if (!cands.length) return;
+  cands.sort((p, q) => p.w - q.w);                     // tightest first, it pays best
+
+  const spd = Math.hypot(car.vx, car.vy);
+  const wantOut = Math.max(6, K_gapExit * spd);            // seconds of clear road he wants beyond
+  for (const c of cands) {
+    const m = Math.hypot(c.cx - car.x, c.cy - car.y) || 1;
+    const dx = (c.cx - car.x) / m, dy = (c.cy - car.y) / m;
+    const out = beyond(c.cx, c.cy, dx, dy, range);
+    if (out.clear < wantOut) continue;                 // looks grim on the other side, next
+    gap.on = true; gap.t = K_gapHold; gap.clean = true; gap.w = c.w; gap.sw = sw;
+    gap.cx = c.cx; gap.cy = c.cy;
+    gap.lx = c.lx; gap.ly = c.ly; gap.rx = c.rx; gap.ry = c.ry;
+    gap.dx = dx; gap.dy = dy;
+    gap.need = wantOut; gap.out = out.clear; gap.recheck = 0;
+    gap.ex = out.x; gap.ey = out.y; gap.eang = out.ang;
+    return;
+  }
+}
+function updateGap(dt) {
+  if (gap.cd > 0) gap.cd -= dt;
+  if (!gap.on) return;
+  gap.t -= dt;
+  const past = (car.x - gap.cx) * gap.dx + (car.y - gap.cy) * gap.dy;
+  if (past > 0) {                                       // out the other side
+    if (gap.clean) {
+      // Tightness is a percentage: how much of the hole his car actually filled.
+      // Measured from his swept width AT THE MOMENT HE GOES THROUGH, not when he
+      // locked on, so a car that starts sliding after committing gets credit for
+      // the width it really needed. Sideways through the same hole fills far more
+      // of it, so going sideways pays more, which is the whole point.
+      const beta = Math.atan2(car.vy, Math.max(0.4, Math.abs(car.vx)));
+      const swNow = sweptWidth(beta);
+      const tight = Math.min(1.6, swNow / gap.w);     // over 1 means he only just fitted
+      const spd = Math.hypot(car.vx, car.vy);
+      const slipN = Math.min(1, Math.abs(beta) / 0.45);
+      // Capped per pass: one spectacular thread must not be worth a whole window,
+      // or the score turns into a lottery and there's nothing left to learn from.
+      thread += Math.min(1.8, tight * tight * tight * (spd / 16) * (1 + 1.5 * slipN));
+    }
+    gap.on = false; gap.cd = 0.5;
+    return;
+  }
+  if (gap.t <= 0) { gap.on = false; gap.cd = 0.5; return; }
+  gap.recheck -= dt;
+  if (gap.recheck <= 0) {                               // is it still worth going through?
+    gap.recheck = 0.16;
+    const out = beyond(gap.cx, gap.cy, gap.dx, gap.dy, 55);
+    gap.out = out.clear; gap.ex = out.x; gap.ey = out.y; gap.eang = out.ang;
+    // someone rolled into the mouth, or the road beyond it closed up
+    const shut = moverAt(gap.cx, gap.cy, null) || solid(gap.cx | 0, gap.cy | 0);
+    if (shut || out.clear < gap.need * 0.7) {           // wave it off, no credit
+      gap.on = false; gap.cd = 0.4; abandons++; gapAborted = true;
+    }
+  }
+}
+
+/* ------------------------------------------------ scoring & the trial loop */
+/* He drives continuously. Every window the books are closed on the current
+   genome, the verdict is passed, and the next one takes over mid-corner. */
+const WIN = 30, WARM = 3;
+const CW = 12, CGW = Math.ceil(GW / CW), CGH = Math.ceil(GH / CW);
+const seen = new Uint8Array(CGW * CGH);
+const lastSeen = new Float32Array(CGW * CGH).fill(-1e4);   // when he was last through here
+const dread = new Float32Array(CGW * CGH);                 // and where it went badly wrong
+function dreadAt(x, y) {
+  const i = (y / CW | 0) * CGW + (x / CW | 0);
+  return (i < 0 || i >= dread.length) ? 0 : dread[i];
+}
+function markDread(x, y, amt) {                            // a zone, not a spot
+  const cx = x / CW | 0, cy = y / CW | 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const gx = cx + dx, gy = cy + dy;
+    if (gx < 0 || gy < 0 || gx >= CGW || gy >= CGH) continue;
+    const i = gy * CGW + gx;
+    dread[i] = Math.min(5, dread[i] + amt * ((dx | dy) === 0 ? 1 : 0.35));
+  }
+}
+function staleAt(x, y, patience) {
+  const i = (y / CW | 0) * CGW + (x / CW | 0);
+  if (i < 0 || i >= lastSeen.length) return 0;
+  return Math.min(1, (worldT - lastSeen[i]) / patience);
+}
+let progX = 0, progY = 0, progT = 0;
+let winT = 0, warmT = 0, dist = 0, novel = 0, finSum = 0, finN = 0, stuckT = 0, fadeT = 0,
+    maxSpd = 0, spoiled = false, flair = 0, dreadT = 0;
+
+/* Windows alternate. One proves the incumbent, which both re-baselines his score
+   against the car park as it stands now and gives you a lap of his best driving;
+   the next tries a mutation against that fresh benchmark. */
+function newWindow() {
+  seen.fill(0); winT = 0; dist = 0; novel = 0; finSum = 0; finN = 0; maxSpd = 0; flair = 0;
+  enc.on = false; enc.min = 9; enc.t = 0; enc.kissed = false;
+  thread = 0;
+  trialImpact = 0; nearMiss = 0; warmT = WARM;   // settling time, not scored
+  spoiled = false;
+  if (brain.mode === 'cand') { brain.mode = 'best'; brain.cand = brain.best.slice(); }
+  else { brain.mode = 'cand'; mutate(); }
+}
+function startTrial() { placeCar(); stuckT = 0; newWindow(); }
+
+/* Reward is convex in pace: going quicker has to pay more than proportionally,
+   or a careful potter is always the right answer. */
+const PACE_EXP = 1.6, PACE_K = 0.075, TOPSPD_K = 0.06, HIT_K = 2.5, FLAIR_K = 0.2, THREAD_K = 0.30, NEAR_K = 0.80;
+function scoreNow() {                            // per second, so windows compare cleanly
+  if (winT < 0.5) return 0;
+  const fin = finN ? finSum / finN : 0;
+  const spread = novel / (novel + 12);
+  const pace = Math.pow(dist / winT, PACE_EXP) * PACE_K;
+  // Style multiplies pace rather than adding to it. As an additive bonus it can be
+  // farmed at walking pace: potter through easy bay slots all window and score as
+  // well as driving properly. Multiplied, none of it counts unless he's moving.
+  const style = 1 + 1.0 * fin                           // how sideways through corners
+              + Math.min(flair, 2) * FLAIR_K            // rotation on the handbrake or a flick
+              + Math.min(thread, 5) * THREAD_K          // holes threaded: tight, fast, sideways
+              + Math.min(nearMiss, 4) * NEAR_K;         // and how close the back end came
+  return pace * spread * style + maxSpd * TOPSPD_K - trialImpact * HIT_K / winT;
+}
+function endWindow() {
+  const s = scoreNow();
+  if (spoiled) {
+    // he had to be dug out mid-window, so the number means nothing
+    if (brain.mode === 'cand') { brain.sigma = Math.min(0.3, brain.sigma * 1.09); brain.verdict = 'binned'; }
+    else brain.verdict = 'spoiled';
+  } else if (brain.mode === 'best') {
+    // a benchmark can raise the bar freely but only lower it slowly, or one lucky
+    // mutation followed by an honest re-measurement ratchets him downhill
+    brain.bestScore = brain.bestScore < -1e8 ? s
+      : (s > brain.bestScore ? s : brain.bestScore * 0.9 + s * 0.1);
+    brain.verdict = 'benchmark';
+    // He keeps a copy of the best he has ever driven. If three benchmarks running
+    // come in at less than half that, he has wandered somewhere bad: go back to it.
+    // The high-water mark has to sag, or a score set before the car park got
+    // rearranged becomes unreachable and the rescue fires forever.
+    if (brain.hofScore > 1) brain.hofScore *= 0.998;
+    if (s > brain.hofScore) { brain.hof = brain.best.slice(); brain.hofScore = s; brain.slump = 0; }
+    else if (brain.hofScore > 1 && s < brain.hofScore * 0.45) {
+      if (++brain.slump >= 4) {
+        brain.best = brain.hof.slice(); brain.bestScore = brain.hofScore * 0.8;
+        brain.sigma = 0.16; brain.slump = 0; brain.verdict = 'back to his best';
+      }
+    } else brain.slump = 0;           // must beat the bar by a margin, not by luck
+  } else if (s > brain.bestScore + Math.abs(brain.bestScore) * 0.04 + 0.05) {
+    brain.best = brain.cand.slice(); brain.bestScore = s;
+    brain.sigma = Math.max(0.025, brain.sigma * 0.84);
+    brain.verdict = 'kept'; brain.accepted++;
+  } else {
+    brain.sigma = Math.min(0.3, brain.sigma * 1.09);
+    brain.verdict = 'binned';
+  }
+  brain.gen++;
+  newWindow();
+}
+function drive() {
+  const g = brain.cand;
+  const nR = Math.max(3, Math.round(g[GI.rays])), fan = g[GI.fan], reach = g[GI.reach];
+  // eyes swing toward where he's actually travelling, not where the bonnet points
+  const gz = Math.max(-1.3, Math.min(1.3, -K_gaze * car.slip));
+  castRays(nR, fan, reach, gz);
+  let ws = 0, wa = 0;
+  for (const rr of rays) {
+    const centred = Math.pow(0.5 + 0.5 * Math.cos(rr.local), g[GI.focus]);
+    // restlessness: a direction he hasn't been down for a while looks more inviting
+    const look = Math.min(rr.d, 24);
+    const lx2 = car.x + rr.cx * look, ly2 = car.y + rr.cy * look;
+    const st = staleAt(lx2, ly2, K_patience);
+    // bad vibes: somewhere he once had to reverse out of looks a lot less inviting,
+    // and unlike boredom this one doesn't wear off for a good while
+    const w = Math.pow(Math.max(0.001, rr.nd), g[GI.aim]) * centred
+              * (1 + g[GI.boredom] * st) / (1 + g[GI.badVibes] * dreadAt(lx2, ly2));
+    ws += w; wa += w * rr.a;
+  }
+  const aim = (ws ? wa / ws : 0) + g[GI.bias] * fan * 0.5;
+  // how far it's clear along the line he's chosen, and along his nose.
+  // taking the shortest of every ray near centre reads a narrow aisle as a wall.
+  let aimR = rays[0], noseR = rays[0];
+  for (const rr of rays) {
+    if (Math.abs(rr.a - aim) < Math.abs(aimR.a - aim)) aimR = rr;
+    if (Math.abs(rr.a) < Math.abs(noseR.a)) noseR = rr;
+  }
+  const fwd = Math.min(aimR.d, noseR.d);
+  let aimed = aim;
+  const spd0 = Math.hypot(car.vx, car.vy);
+  if (jt.phase === 'none' && bl.phase === 'none') {
+    if (LINE.t <= 0) { buildLine(g); LINE.t = 0.8; }
+    readLine(g);
+    // The line only ever suggests. If the way it points isn't actually open right
+    // now, his own eyes win: strategy must never outrank the reflex layer.
+    if (LINE.ok) {
+      const la = Math.max(-0.25, Math.min(0.25, LINE.aim));
+      const openThere = probe(car.x, car.y, Math.cos(car.h + la), Math.sin(car.h + la), 26, null);
+      if (openThere > 18) aimed += la * K_lineTrust;
+    }
+  } else { LINE.ok = false; }
+
+  // send the ghosts out again, unless he's busy wrestling the car
+  if (jt.phase === 'none' && bl.phase === 'none') {
+    if (PLAN.t <= 0 && spd0 > 3) { plan(g); PLAN.t = 0.3; }
+    aimed += PLAN.bias * g[GI.thinkTrust];
+  } else { PLAN.bias = 0; PLAN.pace = 1; PLAN.paths.length = 0; }
+  if (!gap.on && gap.cd <= 0 && spd0 > 7) findGap(g);
+  if (gap.on) {                                  // commit to the hole he's picked
+    let wa2 = Math.atan2(gap.cy - car.y, gap.cx - car.x) - car.h;
+    while (wa2 > Math.PI) wa2 -= 6.2832; while (wa2 < -Math.PI) wa2 += 6.2832;
+    aimed = aim * (1 - K_gapSeek) + wa2 * K_gapSeek;
+  }
+
+  const st = K_slipWant, ex = car.ar - Math.max(-st, Math.min(st, car.ar));
+  const steer = g[GI.steer] * aimed - g[GI.yawDamp] * car.r + K_ctrSteer * ex;
+  ctl.steer = Math.max(-MAX_STEER, Math.min(MAX_STEER, steer));
+  const paceMul = 1 + (PLAN.pace - 1) * g[GI.thinkTrust];        // trust the forecast this much
+  // Two ways to decide how fast: how close things are, or how bent the line is.
+  // The first makes him lift for a gap he'd sail through; the second doesn't care
+  // how near the parked cars are as long as the way through them is straight.
+  // Curvature is an extra ceiling, never a licence. What "don't lift for a gap"
+  // actually means is that a straight line lets him spend his clearance more
+  // freely -- more speed per metre of road he can see -- not that he stops
+  // looking. Clearance keeps the veto either way.
+  const straightness = LINE.ok ? Math.min(1, LINE.minR / 80) : 0;
+  const byClear = Math.min(K_vTop, g[GI.vClear] * (1 + g[GI.lineBold] * 0.7 * straightness) * fwd);
+  const vT = Math.min(byClear, LINE.ok ? LINE.cap : 1e3) * paceMul;
+  const err = vT - car.vx;
+  if (err > 0) { ctl.thr = Math.min(1, K_throttle * err / 9); ctl.brk = 0; }
+  else { ctl.brk = Math.min(1, g[GI.brake] * -err / 9); ctl.thr = 0; }
+  if (Math.abs(car.ar) > st) ctl.thr = Math.max(ctl.thr, g[GI.holdSlide]);
+
+  // handbrake: yank it to snap the back end round when the corner is too tight
+  // to arrive at on grip alone and the rear hasn't come round on its own yet
+  const spd = Math.hypot(car.vx, car.vy);
+  if (hbS.t > 0) ctl.hb = 1;
+  else {
+    ctl.hb = 0;
+    if (hbS.cd <= 0 && err < 0 && Math.abs(aimed) > g[GI.hbAim] && spd > K_hbSpeed && Math.abs(car.ar) < K_hbGate) {
+      hbS.t = K_hbHold; hbS.cd = K_hbHold + 1.5; ctl.hb = 1;
+    }
+  }
+  if (ctl.hb > 0.5) { ctl.thr = 0; ctl.brk = 0; }
+  else if (hbS.t <= 0 && hbS.cd > 0.25) ctl.thr = Math.max(ctl.thr, K_hbCatch);
+
+  /* Bail-out turn: the route he was committed to has just shut, either because
+     the gap finder waved it off or because there is suddenly less road ahead
+     than his speed needs. Yank it round on the handbrake rather than stand on
+     the brakes and hope. */
+  if (jt.phase === 'none') {
+    if (bl.phase === 'none') {
+      // Bail only when stopping in a straight line genuinely will not fit.
+      // Braking distance goes with the square of speed, so a plain "seconds of
+      // clearance" trigger fires far too readily at low speed and too late at high.
+      const stopIn = spd0 * spd0 / 23.6;           // v^2 / 2a, at about 1.2g
+      const panic = fwd < stopIn * g[GI.bailMargin];
+      if (bl.cd <= 0 && spd0 > g[GI.bailSpeed] && (gapAborted || panic)) {
+        bl.phase = 'spin'; bl.t = 0; bl.h0 = car.h;
+        let lft = 0, rgt = 0;                    // come round toward whichever side is freer
+        for (const rr of rays) { if (rr.a < 0) lft += rr.nd; else rgt += rr.nd; }
+        bl.dir = rgt > lft ? 1 : -1;
+        gap.on = false;
+      }
+    }
+    if (bl.phase !== 'none') {
+      bl.t += 4 * DT;
+      if (bl.phase === 'spin') {
+        ctl.hb = 1; ctl.thr = 0; ctl.brk = 0;
+        ctl.steer = bl.dir * MAX_STEER * K_bailLock;
+        let dh = car.h - bl.h0;
+        while (dh > Math.PI) dh -= 6.2832; while (dh < -Math.PI) dh += 6.2832;
+        if (Math.abs(dh) > K_bailTurn || bl.t > 2 || Math.hypot(car.vx, car.vy) < 1.2) {
+          bl.phase = 'away'; bl.t = 0;
+        }
+      } else {                                   // pick it up and go, or sit still
+        ctl.hb = 0; ctl.brk = 0; ctl.thr = K_bailOut;
+        ctl.steer = Math.max(-MAX_STEER, Math.min(MAX_STEER, aimed * g[GI.steer] - 0.4 * car.r));
+        if (bl.t > 0.7) { bl.phase = 'none'; bl.cd = 2.5; }
+      }
+    }
+  }
+  gapAborted = false;
+
+  // Getting out of a jam: back up, flick it round, catch it going forwards.
+  // Once started he sees it through; he does not just crawl out in reverse.
+  if (jt.phase === 'none' && jt.cd <= 0 && stuckT > 1.2) {
+    markDread(car.x, car.y, 1);          // he will remember this corner of the car park
+    // No point winding up a J-turn with a row of parked cars right behind him
+    const room = probe(car.x, car.y, -Math.cos(car.h), -Math.sin(car.h), 30, null);
+    // He needs room to wind up (about v^2/2a) plus room to swing through it.
+    // Short of that there is no J-turn to be had, so don't start one.
+    jt.phase = room > 12 ? 'back' : 'shuffle';
+    jt.t = 0; jt.dir = aimed >= 0 ? 1 : -1;
+  }
+  if (jt.phase !== 'none') {
+    jt.t += 4 * DT;
+    ctl.hb = 0; ctl.brk = 0;
+    if (jt.phase === 'back') {
+      ctl.rev = 1; ctl.thr = 0;
+      ctl.steer = -0.3 * car.r;            // wheel stays dead straight until he has the speed
+      // He is not allowed to turn it until there is enough momentum to carry the
+      // rotation all the way round. Flicking it early just gives a stunted pivot.
+      const behind = probe(car.x, car.y, -Math.cos(car.h), -Math.sin(car.h), 30, null);
+      // Flick when he has the speed he wanted, or when he's about to run out of
+      // room and should use whatever momentum he's managed to wind up.
+      if (-car.vx >= K_jSpeed || (behind < 5 && -car.vx > 4.5)) {
+        jt.phase = 'flick'; jt.t = 0; jt.h0 = car.h;
+      } else if (jt.t > 5) { jt.phase = 'shuffle'; jt.t = 0; }  // no room at all: pull out forwards
+    } else if (jt.phase === 'flick') {
+      ctl.rev = K_jHold; ctl.thr = 0;                  // boot of lock, hold some reverse
+      ctl.steer = jt.dir * MAX_STEER * K_jLock;
+      let dh = car.h - jt.h0;
+      while (dh > Math.PI) dh -= 6.2832; while (dh < -Math.PI) dh += 6.2832;
+      if (Math.abs(dh) > K_jExit || jt.t > 3) {
+        jt.phase = 'catch'; jt.t = 0;
+      }
+    } else if (jt.phase === 'shuffle') {            // no room to be stylish: just get out
+      if (jt.t < 1.3) {                             // peel off whatever he's leaning on first
+        ctl.rev = 1; ctl.thr = 0; ctl.steer = -0.3 * car.r;
+      } else {
+        ctl.rev = 0; ctl.thr = Math.max(0.55, K_jCatch);
+        let open = rays[0];
+        for (const rr of rays) if (rr.d > open.d) open = rr;    // point at the biggest hole
+        ctl.steer = Math.max(-MAX_STEER, Math.min(MAX_STEER, open.a * 2.5 - 0.3 * car.r));
+      }
+      if (jt.t > 3 || car.vx > 4) { jt.phase = 'none'; jt.cd = 4; stuckT = 0; }
+    } else {                                        // catch it and drive away
+      ctl.rev = 0; ctl.thr = K_jCatch;
+      ctl.steer = Math.max(-MAX_STEER, Math.min(MAX_STEER, aimed * g[GI.steer] - 0.35 * car.r));
+      if (jt.t > 0.8 || car.vx > 4) { jt.phase = 'none'; jt.cd = 4; stuckT = 0; }
+    }
+  } else ctl.rev = 0;
+}
+
+/* --------------------------------------------------------------- the loop */
+const DT = 1 / 120, WARPS = [1, 2, 4, 8, 16, 32];
+let showWork = false;                  // press d to see what he's thinking
+let warp = 4, paused = false, worldT = 0, acc = 0, ctr = 0, last = 0;
+
+function simStep() {
+  if (ctr++ % 4 === 0) drive();
+  const px = car.x, py = car.y;
+  const imp0 = trialImpact;
+  // how he was travelling BEFORE any contact: a collision scrubs the speed and
+  // changes the slip angle, so judging the scuff afterwards never qualifies
+  const preSpd = Math.hypot(car.vx, car.vy), preSlip = Math.abs(car.slip);
+  stepPhysics(DT);
+  const spd = Math.hypot(car.vx, car.vy);
+  if (warmT > 0) {
+    warmT -= DT;
+    trialImpact = imp0;                          // the previous genome's mess isn't his
+  } else {
+    dist += Math.hypot(car.x - px, car.y - py);
+    if (spd > 4 && Math.abs(car.r) > 0.15) {
+      finSum += Math.min(1, Math.abs(car.slip) / 0.45); finN++;
+    }
+    const ci = (car.y / CW | 0) * CGW + (car.x / CW | 0);
+    if (ci >= 0 && ci < seen.length) {
+      if (!seen[ci]) { seen[ci] = 1; novel += Math.min(1, (worldT - lastSeen[ci]) / 45); }
+      lastSeen[ci] = worldT;
+    }
+    if (spd > maxSpd) maxSpd = spd;
+    if ((ctl.hb > 0.5 && spd > 8) || (jt.phase === 'flick' && spd > 3))
+      flair += Math.abs(car.r) * DT;                            // degrees earned sideways
+    winT += DT;
+  }
+  if ((spd > 6 && Math.abs(car.slip) > 0.14) || (ctl.hb > 0.5 && spd > 2.5)
+      || (jt.phase === 'flick' && spd > 2) || (bl.phase === 'spin' && spd > 2)) mark(px, py);
+  if (ctr % 4 === 0) updateMovers(4 * DT);
+  updateLoose(DT);
+  updateGap(DT);
+  if (PLAN.t > 0) PLAN.t -= DT;
+  if (LINE.t > 0) LINE.t -= DT;
+  if (jt.cd > 0) jt.cd -= DT;
+  if (bl.cd > 0) bl.cd -= DT;
+  // a light kiss off the back corner while sideways and quick is a close call,
+  // not a crash: hand most of the penalty back and let it count toward the credit
+  if (stepImpact > 0) {
+    if (hitRear && stepImpact < 10 && preSpd > 6 && preSlip > 0.2) {
+      // graded, not a cliff: a glancing brush is nearly free, a proper thump isn't
+      const forgive = stepImpact * 0.85 * (1 - stepImpact / 10);
+      trialImpact -= Math.max(0, forgive);
+      enc.kissed = true;
+    }
+    stepImpact = 0; hitRear = false; hitFront = false;
+  }
+  if (ctr % 4 === 0) closeCalls(4 * DT);
+  if (hbS.t > 0) hbS.t -= DT;
+  if (hbS.cd > 0) hbS.cd -= DT;
+  /* Stuck means making no progress, not standing still. Leaning on a parked car
+     with the throttle on, the collision push-out jiggles him just enough to keep
+     resetting a speed-based timer, so the escape never fired and he could sit
+     there for half a minute. Distance covered over a window can't be fooled. */
+  progT += DT;
+  if (progT >= 1.5) {
+    stuckT = Math.hypot(car.x - progX, car.y - progY) < 2.2 ? stuckT + 1.5 : 0;
+    progX = car.x; progY = car.y; progT = 0;
+  }
+  worldT += DT; fadeT += DT; dreadT += DT;
+  if (dreadT > 1) {                                // grudges fade, but not quickly
+    dreadT = 0;
+    const k = Math.exp(-1 / K_grudge);
+    for (let i = 0; i < dread.length; i++) if (dread[i] > 0.002) dread[i] *= k; else dread[i] = 0;
+  }
+  if (fadeT > 5) {
+    fadeT = 0;
+    sctx.globalCompositeOperation = 'destination-out';
+    sctx.fillStyle = 'rgba(0,0,0,0.13)';
+    sctx.fillRect(0, 0, skid.width, skid.height);
+    sctx.globalCompositeOperation = 'source-over';
+  }
+  if (stuckT > 6) {                              // still wedged after shunting: dig him out
+    placeCar(); stuckT = 0; spoiled = true; warmT = WARM;
+  }
+  if (winT >= WIN) endWindow();
+}
+
+function frame(now) {
+  const rdt = last ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
+  if (!paused) {
+    acc += rdt * warp;
+    let budget = 2400;
+    while (acc >= DT && budget-- > 0) { simStep(); acc -= DT; }
+    if (budget <= 0) acc = 0;
+  }
+  render();
+  if (now - lastTel > 120) { telemetry(); lastTel = now; }
+  requestAnimationFrame(frame);
+}
+
+/* ------------------------------------------------------ isometric camera */
+const cv = document.getElementById('cv'), g2 = cv.getContext('2d');
+const GS = 4;                                    // ground canvas pixels per metre
+const ground = document.createElement('canvas'); ground.width = GW * GS; ground.height = GH * GS;
+const gctx = ground.getContext('2d');
+const skid = document.createElement('canvas'); skid.width = GW * GS; skid.height = GH * GS;
+const sctx = skid.getContext('2d');
+
+let K = 4, ox = 0, oy = 0, zoom = 1, follow = false;
+const ZK = () => K * 0.78;                       // how tall a metre of height looks
+const sx = (x, y) => (x - y) * K + ox;
+const sy = (x, y, z) => (x + y) * K * 0.5 + oy - (z || 0) * ZK();
+const depth = (x, y) => x + y;
+
+function unproject(px, py) {
+  const u = (px - ox) / K, v = 2 * (py - oy) / K;
+  return [(u + v) / 2, (v - u) / 2];
+}
+let camX = GW / 2, camY = GH / 2;
+const baseK = () => Math.min(innerWidth / (GW + GH), innerHeight / ((GW + GH) * 0.5 + 14));
+function centreOn(wx, wy) {
+  ox = cv.width / 2 - (wx - wy) * K;
+  oy = cv.height / 2 - (wx + wy) * K * 0.5;
+}
+function fitCam() {
+  cv.width = innerWidth; cv.height = innerHeight;
+  K = baseK() * zoom;
+  centreOn(camX, camY);
+}
+addEventListener('resize', fitCam);
+
+/* ------------------------------------------------------------ ground art */
+function paintGround() {
+  gctx.clearRect(0, 0, ground.width, ground.height);
+  // Base layer straight into pixels: outside the glyph is left transparent so the
+  // night shows through, beds are grass, everything else is tarmac.
+  const W2 = ground.width, H2 = ground.height;
+  if (W2 > 0 && H2 > 0) {
+    const img = gctx.createImageData(W2, H2), d = img.data;
+    for (let py = 0; py < H2; py++) {
+      const cy = (py / GS) | 0;
+      for (let px = 0; px < W2; px++) {
+        const cx = (px / GS) | 0, ci = cy * GW + cx, o = (py * W2 + px) * 4;
+        if (!inPark[ci]) { d[o + 3] = 0; continue; }
+        const n = (Math.random() - 0.5) * 10;
+        if (bedMask[ci]) {
+          d[o] = 36 + n; d[o + 1] = 58 + n * 1.6; d[o + 2] = 38 + n; d[o + 3] = 255;
+        } else {
+          d[o] = 43 + n; d[o + 1] = 49 + n; d[o + 2] = 55 + n; d[o + 3] = 255;
+        }
+      }
+    }
+    gctx.putImageData(img, 0, 0);
+  }
+  // a pale lip where the tarmac stops
+  gctx.fillStyle = 'rgba(226,230,232,0.13)';
+  for (let y = 1; y < GH - 1; y++) for (let x = 1; x < GW - 1; x++) {
+    if (!inPark[y * GW + x]) continue;
+    if (inPark[y * GW + x - 1] && inPark[y * GW + x + 1] &&
+        inPark[(y - 1) * GW + x] && inPark[(y + 1) * GW + x]) continue;
+    gctx.fillRect(x * GS, y * GS, GS, GS);
+  }
+  // kerbs round the beds
+  gctx.strokeStyle = 'rgba(210,214,208,0.22)'; gctx.lineWidth = 1.6;
+  for (const b of beds) gctx.strokeRect(b.x0 * GS, b.y0 * GS, b.w * GS, b.h * GS);
+  // sodium light pools
+  for (const [lx, ly] of [[45, 30], [155, 30], [45, 120], [155, 120], [100, 75], [25, 75], [175, 75]]) {
+    const gr = gctx.createRadialGradient(lx * GS, ly * GS, 4, lx * GS, ly * GS, 46 * GS);
+    gr.addColorStop(0, 'rgba(255,206,140,0.15)');
+    gr.addColorStop(1, 'rgba(255,206,140,0)');
+    gctx.fillStyle = gr;
+    gctx.fillRect((lx - 46) * GS, (ly - 46) * GS, 92 * GS, 92 * GS);
+  }
+  // wet sheen streaking away from the lamps
+  for (const [lx, ly] of [[45, 30], [155, 30], [45, 120], [155, 120], [100, 75], [25, 75], [175, 75]]) {
+    for (let k = 0; k < 22; k++) {
+      const off = (Math.random() - 0.5) * 46, len = 6 + Math.random() * 26;
+      gctx.fillStyle = 'rgba(255,214,158,' + (0.012 + Math.random() * 0.02).toFixed(3) + ')';
+      gctx.fillRect((lx + off) * GS, (ly - len / 2) * GS, 1.6, len * GS);
+    }
+  }
+  // bay markings
+  gctx.strokeStyle = 'rgba(226,230,232,0.30)'; gctx.lineWidth = 1.4;
+  gctx.beginPath();
+  for (const b of bays) {
+    if (b.bed) continue;
+    const x = b.x0 * GS, y = b.y0 * GS, w = b.w * GS, d = b.d * GS;
+    const aisleTop = (b.row % 2 === 0);            // open edge faces the aisle
+    gctx.moveTo(x, y); gctx.lineTo(x, y + d);
+    gctx.moveTo(x + w, y); gctx.lineTo(x + w, y + d);
+    if (aisleTop) { gctx.moveTo(x, y + d); gctx.lineTo(x + w, y + d); }
+    else { gctx.moveTo(x, y); gctx.lineTo(x + w, y); }
+  }
+  gctx.stroke();
+
+}
+
+function mark(px, py) {
+  sctx.fillStyle = 'rgba(14,15,17,0.5)';
+  const ch = Math.cos(car.h), sh = Math.sin(car.h);
+  for (const s of [-1, 1]) {
+    const bx = -LR, by = s * HALF_W;
+    sctx.fillRect((px + bx * ch - by * sh) * GS - 1.2, (py + bx * sh + by * ch) * GS - 1.2, 2.6, 2.6);
+  }
+}
+
+/* ------------------------------------------------------- box rendering */
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, (n >> 16) * f | 0), g = Math.min(255, ((n >> 8) & 255) * f | 0),
+        b = Math.min(255, (n & 255) * f | 0);
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
+function boxCorners(cx, cy, ang, L, W) {
+  const c = Math.cos(ang), s = Math.sin(ang), hl = L / 2, hw = W / 2;
+  return [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]]
+    .map(([a, b]) => [cx + a * c - b * s, cy + a * s + b * c]);
+}
+function drawBox(cx, cy, ang, L, W, H, col, roof, z0) {
+  const zb = z0 || 0;
+  const p = boxCorners(cx, cy, ang, L, W);
+  const dc = depth(cx, cy);
+  // side faces that face the viewer
+  for (let i = 0; i < 4; i++) {
+    const a = p[i], b = p[(i + 1) % 4];
+    const md = depth((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    if (md <= dc) continue;
+    g2.fillStyle = shade(col, Math.abs(a[0] - b[0]) > Math.abs(a[1] - b[1]) ? 0.62 : 0.46);
+    g2.beginPath();
+    g2.moveTo(sx(a[0], a[1]), sy(a[0], a[1], zb));
+    g2.lineTo(sx(b[0], b[1]), sy(b[0], b[1], zb));
+    g2.lineTo(sx(b[0], b[1]), sy(b[0], b[1], H));
+    g2.lineTo(sx(a[0], a[1]), sy(a[0], a[1], H));
+    g2.fill();
+  }
+  g2.fillStyle = col;
+  g2.beginPath();
+  g2.moveTo(sx(p[0][0], p[0][1]), sy(p[0][0], p[0][1], H));
+  for (let i = 1; i < 4; i++) g2.lineTo(sx(p[i][0], p[i][1]), sy(p[i][0], p[i][1], H));
+  g2.fill();
+  if (roof) {                                   // glass, so you can tell which way it faces
+    const q = boxCorners(cx, cy, ang, L * roof, W * 0.78);
+    g2.fillStyle = 'rgba(22,26,30,0.72)';
+    g2.beginPath();
+    g2.moveTo(sx(q[0][0], q[0][1]), sy(q[0][0], q[0][1], H));
+    for (let i = 1; i < 4; i++) g2.lineTo(sx(q[i][0], q[i][1]), sy(q[i][0], q[i][1], H));
+    g2.fill();
+  }
+}
+
+/* perimeter wall in segments, so it sorts sensibly against the vehicles */
+const props = [];
+function buildProps() {
+  props.length = 0;
+  for (const t of trees)                        // canopies, tall enough to hide things behind
+    props.push({ cx: t.x, cy: t.y, ang: 0, L: t.r * 2, W: t.r * 2, H: t.h, col: '#38553c' });
+  for (const v of vehicles) props.push(v);
+  props.sort((a, b) => depth(a.cx, a.cy) - depth(b.cx, b.cy));
+}
+
+function render() {
+  g2.setTransform(1, 0, 0, 1, 0, 0);
+  g2.fillStyle = '#0a0c0e';
+  g2.fillRect(0, 0, cv.width, cv.height);
+  if (follow) { camX = car.x; camY = car.y; centreOn(camX, camY); }
+
+  // ground plane: one transformed blit each
+  const a = K / GS, b = K / (2 * GS);
+  g2.setTransform(a, b, -a, b, ox, oy);
+  g2.drawImage(ground, 0, 0);
+  g2.globalAlpha = 0.85; g2.drawImage(skid, 0, 0); g2.globalAlpha = 1;
+  g2.setTransform(1, 0, 0, 1, 0, 0);
+
+  // what Trueno can see, painted on the tarmac
+  if (showWork) {
+  g2.strokeStyle = 'rgba(77,127,150,0.28)'; g2.lineWidth = 1;
+  g2.beginPath();
+  for (const rr of rays) {
+    const ang = car.h + rr.a, ex = car.x + Math.cos(ang) * rr.d, ey = car.y + Math.sin(ang) * rr.d;
+    g2.moveTo(sx(car.x, car.y), sy(car.x, car.y, 0));
+    g2.lineTo(sx(ex, ey), sy(ex, ey, 0));
+  }
+  g2.stroke();
+  }
+
+  // everything with height, back to front, Trueno slotted in by depth
+  if (showWork && LINE.ok && LINE.pts.length > 2) {       // the racing line
+    g2.strokeStyle = 'rgba(226,168,74,0.5)'; g2.lineWidth = 2;
+    g2.beginPath();
+    g2.moveTo(sx(LINE.pts[0][0], LINE.pts[0][1]), sy(LINE.pts[0][0], LINE.pts[0][1], 0));
+    for (const q of LINE.pts) g2.lineTo(sx(q[0], q[1]), sy(q[0], q[1], 0));
+    g2.stroke();
+  }
+
+  // the ghosts' forecasts, with the line he settled on picked out
+  for (let i = 0; showWork && i < PLAN.paths.length; i++) {
+    const pth = PLAN.paths[i], win = i === PLAN.win;
+    if (pth.length < 4) continue;
+    g2.strokeStyle = win ? 'rgba(127,192,138,0.85)' : 'rgba(150,165,175,0.22)';
+    g2.lineWidth = win ? 2 : 1;
+    g2.beginPath();
+    g2.moveTo(sx(pth[0], pth[1]), sy(pth[0], pth[1], 0));
+    for (let k = 2; k < pth.length; k += 2) g2.lineTo(sx(pth[k], pth[k + 1]), sy(pth[k], pth[k + 1], 0));
+    g2.stroke();
+    if (win) {                                   // where he reckons he'll be
+      const ex = pth[pth.length - 2], ey = pth[pth.length - 1];
+      g2.fillStyle = 'rgba(127,192,138,0.9)';
+      g2.beginPath(); g2.arc(sx(ex, ey), sy(ex, ey, 0), 2.6, 0, 6.2832); g2.fill();
+    }
+  }
+
+  // ground he's wary of, in red
+  for (let i = 0; showWork && i < dread.length; i++) {
+    if (dread[i] < 0.03) continue;
+    const cxx = (i % CGW) * CW, cyy = ((i / CGW) | 0) * CW;
+    g2.fillStyle = 'rgba(200,64,48,' + (0.05 + 0.10 * Math.min(1, dread[i] / 2)).toFixed(3) + ')';
+    g2.beginPath();
+    g2.moveTo(sx(cxx, cyy), sy(cxx, cyy, 0));
+    g2.lineTo(sx(cxx + CW, cyy), sy(cxx + CW, cyy, 0));
+    g2.lineTo(sx(cxx + CW, cyy + CW), sy(cxx + CW, cyy + CW, 0));
+    g2.lineTo(sx(cxx, cyy + CW), sy(cxx, cyy + CW, 0));
+    g2.fill();
+  }
+
+  // where he's been lately, so you can watch his territory move around the park
+  for (let i = 0; showWork && i < lastSeen.length; i++) {
+    const age = worldT - lastSeen[i];
+    if (age > 90) continue;
+    const cxx = (i % CGW) * CW, cyy = ((i / CGW) | 0) * CW;
+    g2.fillStyle = 'rgba(226,168,74,' + (0.055 * (1 - age / 90)).toFixed(3) + ')';
+    g2.beginPath();
+    g2.moveTo(sx(cxx, cyy), sy(cxx, cyy, 0));
+    g2.lineTo(sx(cxx + CW, cyy), sy(cxx + CW, cyy, 0));
+    g2.lineTo(sx(cxx + CW, cyy + CW), sy(cxx + CW, cyy + CW, 0));
+    g2.lineTo(sx(cxx, cyy + CW), sy(cxx, cyy + CW, 0));
+    g2.fill();
+  }
+
+  if (showWork && gap.on) {                                // the hole he's committed to
+    g2.strokeStyle = 'rgba(232,82,63,0.85)'; g2.lineWidth = 2;
+    g2.beginPath();
+    g2.moveTo(sx(gap.lx, gap.ly), sy(gap.lx, gap.ly, 0));
+    g2.lineTo(sx(gap.rx, gap.ry), sy(gap.rx, gap.ry, 0));
+    g2.stroke();
+    g2.strokeStyle = 'rgba(232,82,63,0.45)'; g2.lineWidth = 1;
+    g2.beginPath();
+    g2.moveTo(sx(car.x, car.y), sy(car.x, car.y, 0));
+    g2.lineTo(sx(gap.cx, gap.cy), sy(gap.cx, gap.cy, 0));
+    g2.stroke();
+    for (const q of [[gap.lx, gap.ly], [gap.rx, gap.ry]]) {   // posts either side
+      g2.fillStyle = '#e8523f';
+      g2.beginPath(); g2.arc(sx(q[0], q[1]), sy(q[0], q[1], 0), 2.4, 0, 6.2832); g2.fill();
+    }
+    if (gap.out > 0) {                                     // the way out he's counting on
+      const tx = gap.ex + Math.cos(gap.eang) * gap.out, ty = gap.ey + Math.sin(gap.eang) * gap.out;
+      g2.strokeStyle = 'rgba(226,168,74,0.55)';
+      g2.setLineDash([4, 4]); g2.lineWidth = 1.5;
+      g2.beginPath();
+      g2.moveTo(sx(gap.cx, gap.cy), sy(gap.cx, gap.cy, 0));
+      g2.lineTo(sx(tx, ty), sy(tx, ty, 0));
+      g2.stroke(); g2.setLineDash([]);
+    }
+  }
+
+  if (enc.on && enc.min < 0.75) {                          // that was close
+    const ch2 = Math.cos(car.h), sh2 = Math.sin(car.h);
+    for (const s of [1, -1]) {
+      const bx = -HALF_L, by = s * HALF_W;
+      const px = car.x + bx * ch2 - by * sh2, py = car.y + bx * sh2 + by * ch2;
+      g2.fillStyle = 'rgba(226,168,74,' + (0.75 * (1 - enc.min / 0.75)).toFixed(2) + ')';
+      g2.beginPath(); g2.arc(sx(px, py), sy(px, py, 0.25), 3.2, 0, 6.2832); g2.fill();
+    }
+  }
+
+  const dyn = movers.map(m => ({ d: depth(m.x, m.y), m: m }));
+  dyn.push({ d: depth(car.x, car.y), m: null });          // null is Trueno himself
+  dyn.sort((a, b) => a.d - b.d);
+  const drawDyn = m => m ? drawBox(m.x, m.y, m.h, m.L, m.W, m.H, m.col, 0.55) : drawTrueno();
+  let di = 0;
+  const marL = 60;
+  for (const p of props) {
+    const pd = depth(p.cx, p.cy);
+    while (di < dyn.length && dyn[di].d <= pd) drawDyn(dyn[di++].m);
+    const px = sx(p.cx, p.cy), py = sy(p.cx, p.cy, 0);
+    if (px < -marL || px > cv.width + marL || py < -marL || py > cv.height + marL) continue;
+    drawBox(p.cx, p.cy, p.ang, p.L, p.W, p.H, p.col, p.type ? 0.55 : 0);
+  }
+  while (di < dyn.length) drawDyn(dyn[di++].m);
+
+  if (hitFlash > 0.01) {
+    g2.fillStyle = 'rgba(232,82,63,' + (hitFlash * 0.2).toFixed(3) + ')';
+    g2.fillRect(0, 0, cv.width, cv.height);
+    hitFlash *= 0.86;
+  }
+  if (paused) {
+    g2.fillStyle = '#cfd6db'; g2.font = '13px ui-monospace,monospace';
+    g2.fillText('paused', 16, cv.height - 16);
+  }
+}
+
+function drawTrueno() {
+  /* An AE86 in the two-tone Toyota sold it in: white over black, pop-up lamps up.
+     Still just boxes, but stacked into a long bonnet, a cabin set back, and a
+     stubby tail, which is enough for it to read as the right car. */
+  const ch = Math.cos(car.h), sh = Math.sin(car.h);
+  const at = (f, l) => [car.x + f * ch - l * sh, car.y + f * sh + l * ch];
+  const parts = [];
+  const add = (f, l, L, W, z0, z1, col, roof, ang) => {
+    const q = at(f, l);
+    parts.push({ x: q[0], y: q[1], L: L, W: W, z0: z0, z1: z1, col: col,
+                 roof: roof || 0, ang: ang === undefined ? car.h : ang });
+  };
+  const WHITE = '#e9eae5', BLACK = '#15171a';
+
+  /* Every piece has to genuinely stick out of the one beneath it. Depth sorting
+     can hide a part that's behind another, but nothing can hide a part buried
+     inside another: it just gets painted on top. So the car steps outward as it
+     goes down - wheels widest, then the black sills, then the white body - and
+     the lamps and grille poke proud of the panels they sit in. */
+  for (const s of [1, -1]) {                          // wheels set the track width
+    add(1.22, s * 0.84, 0.60, 0.24, 0, 0.34, '#0d0e10', 0, car.h + car.d);
+    add(-1.26, s * 0.84, 0.60, 0.24, 0, 0.34, '#0d0e10');
+  }
+  add(0, 0, 4.02, 1.56, 0.18, 0.50, BLACK);           // black lower half, inside the wheels
+  add(0, 0, 3.92, 1.44, 0.50, 0.80, WHITE);           // white upper, stepped in again
+  add(-0.36, 0, 1.84, 1.26, 0.80, 1.16, WHITE, 0.60); // cabin, set back and in again
+  for (const s of [1, -1])                            // pop-up lamps, proud of the bonnet
+    add(1.52, s * 0.44, 0.26, 0.30, 0.80, 1.00, '#f4f5f1');
+  for (const s of [1, -1])                            // tail lamps, proud of the tail
+    add(-1.99, s * 0.42, 0.10, 0.30, 0.56, 0.74, '#c0392b');
+  add(1.99, 0, 0.10, 1.04, 0.34, 0.58, '#101214');    // grille, proud of the nose
+
+  /* The car's own parts need depth sorting between themselves, exactly as the
+     scene does. Drawn in a fixed order, the tail lamps and grille painted over
+     the bodywork even when they were round the far side of the car. */
+  parts.sort((a, b) => (a.x + a.y) - (b.x + b.y) || a.z0 - b.z0);
+  for (const q of parts) drawBox(q.x, q.y, q.ang, q.L, q.W, q.z1, q.col, q.roof, q.z0);
+}
+
+/* -------------------------------------------------------------- telemetry */
+const el = id => document.getElementById(id);
+const geneBox = el('genes');
+GENES.forEach((g, gi) => {
+  const d = document.createElement('div'); d.className = 'gene';
+  d.innerHTML = '<b>' + g[0] + '</b><span class="bar"><i></i><u></u></span><span class="num"></span>';
+  d.children[1].dataset.i = gi;
+  geneBox.appendChild(d);
+});
+geneBox.insertAdjacentHTML('afterend',
+  '<div class="hint">drag any bar to set it yourself \u2014 the amber tick stays put ' +
+  'so you can watch him evolve away from it</div>');
+
+/* Hand-setting a gene: it goes straight into his incumbent and into whatever he's
+   driving right now. His bar is halved so the new value gets measured fairly,
+   and then he's free to mutate away from it, which he will. */
+let dragGene = -1;
+const userSet = new Array(NG).fill(null);
+function setGene(ev) {
+  const bar = geneBox.children[dragGene].children[1];
+  const r = bar.getBoundingClientRect();
+  const f = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+  const lo = GENES[dragGene][1], hi = GENES[dragGene][2];
+  const v = lo + f * (hi - lo);
+  brain.best[dragGene] = v; brain.cand[dragGene] = v;
+  userSet[dragGene] = v;
+  const mark = bar.children[1];
+  mark.style.display = 'block'; mark.style.left = (f * 100).toFixed(1) + '%';
+  if (brain.bestScore > -1e8) brain.bestScore *= 0.5;   // give your idea a fair hearing
+  brain.verdict = 'your idea';
+}
+geneBox.addEventListener('mousedown', ev => {
+  const bar = ev.target.closest('.bar');
+  if (!bar) return;
+  dragGene = +bar.dataset.i;
+  setGene(ev); ev.preventDefault();
+});
+addEventListener('mousemove', ev => { if (dragGene >= 0) setGene(ev); });
+addEventListener('mouseup', () => dragGene = -1);
+
+let lastTel = 0;
+function telemetry() {
+  if (el('tel').classList.contains('hide')) return;
+  const mins = worldT / 60 | 0, secs = (worldT % 60) | 0;
+  el('t-park').textContent = parkGlyph + '   ' + vehicles.length + ' cars, ' + trees.length + ' trees';
+  el('t-age').textContent = mins + ':' + String(secs).padStart(2, '0');
+  el('t-warp').textContent = warp + 'x';
+  el('t-gen').textContent = brain.gen + '  (' + brain.accepted + ' kept)';
+  el('t-mode').textContent = brain.mode === 'best' ? 'his best' : 'a mutation';
+  const v = el('t-verd');
+  v.textContent = brain.verdict;
+  v.className = brain.verdict === 'kept' ? 'ok' : brain.verdict === 'binned' ? 'no' : '';
+  el('t-best').textContent = brain.bestScore < -1e8 ? '—' : brain.bestScore.toFixed(2);
+  el('t-hof').textContent = brain.hofScore < -1e8 ? '\u2014' : brain.hofScore.toFixed(2);
+  el('t-cur').textContent = scoreNow().toFixed(2) + (warmT > 0 ? '  settling' : '');
+  el('t-cov').textContent = (winT > 1 ? (dist / winT * 2.237).toFixed(0) : '0') + ' mph';
+  el('t-imp').textContent = trialImpact.toFixed(1) + ' kJ';
+  el('t-spd').textContent = (Math.hypot(car.vx, car.vy) * 2.237).toFixed(0) + ' / ' + (maxSpd * 2.237).toFixed(0);
+  el('t-slip').textContent = (car.slip * 57.3).toFixed(0) + '\u00b0';
+  el('t-hb').textContent = ctl.hb > 0.5 ? 'up' : '\u2014';
+  el('t-jt').textContent = bl.phase === 'spin' ? 'bail-out turn' : bl.phase === 'away' ? 'gathering it up'
+    : jt.phase === 'none' ? '\u2014'
+    : jt.phase === 'back' ? 'winding it back' : jt.phase === 'flick' ? 'J-turn'
+    : jt.phase === 'shuffle' ? 'shuffling out' : 'catching it';
+  el('t-gh').textContent = PLAN.paths.length
+    ? ['as planned','line left','line right','ease off','press on'][PLAN.win] : '\u2014';
+  el('t-line').textContent = LINE.ok
+    ? (LINE.minR > 400 ? 'straight' : LINE.minR.toFixed(0) + 'm') + '  \u2192 ' +
+      (LINE.cap * 2.237).toFixed(0) + 'mph' : '\u2014';
+  el('t-gap').textContent = gap.on ? gap.w.toFixed(1) + 'm / needs ' + gap.sw.toFixed(1) : '\u2014';
+  el('t-out').textContent = gap.on ? gap.out.toFixed(0) + 'm clear, wants ' + gap.need.toFixed(0) : '\u2014';
+  el('t-thr').textContent = thread.toFixed(2);
+  const dnow = dreadAt(car.x, car.y);
+  el('t-dread').textContent = dnow < 0.03 ? '\u2014' : dnow.toFixed(2);
+  el('t-near').textContent = nearMiss.toFixed(2)
+    + (enc.on ? '  ' + enc.min.toFixed(2) + 'm!' : '');
+  el('t-ab').textContent = abandons;
+  el('t-sig').textContent = brain.sigma.toFixed(3);
+  const rows = geneBox.children;
+  for (let i = 0; i < NG; i++) {
+    const val = brain.cand[i], lo = GENES[i][1], hi = GENES[i][2];
+    rows[i].children[1].firstChild.style.width = ((val - lo) / (hi - lo) * 100).toFixed(1) + '%';
+    rows[i].children[2].textContent = Math.abs(val) >= 10 ? val.toFixed(1) : val.toFixed(2);
+  }
+}
+
+/* ------------------------------------------------------------ mouse input */
+let panning = false, panSX = 0, panSY = 0, panOX = 0, panOY = 0;
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mousedown', e => {
+  if (e.button === 1) { panning = true; panSX = e.clientX; panSY = e.clientY; panOX = ox; panOY = oy; e.preventDefault(); return; }
+  const [wx, wy] = unproject(e.clientX, e.clientY);
+  if (e.button === 2) {
+    const v = vehicleAt(wx, wy);
+    if (v) { removeVehicle(v); rebuild(); }
+    return;
+  }
+  if (vehicleAt(wx, wy)) return;                        // space is taken
+  const b = bayAt(wx, wy);
+  if (b) { if (fillBay(b)) rebuild(); return; }
+  // parked badly, out in the aisle
+  const t = randType(1);
+  addVehicle(t, Math.round(wx), Math.round(wy), Math.random() < 0.5 ? 0 : Math.PI / 2, []);
+  rebuild();
+});
+addEventListener('mouseup', () => panning = false);
+addEventListener('mousemove', e => {
+  if (!panning) return;
+  ox = panOX + (e.clientX - panSX); oy = panOY + (e.clientY - panSY);
+  const c = unproject(cv.width / 2, cv.height / 2); camX = c[0]; camY = c[1];
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const [wx, wy] = unproject(e.clientX, e.clientY);
+  zoom = Math.max(0.6, Math.min(6, zoom * (e.deltaY < 0 ? 1.14 : 1 / 1.14)));
+  K = baseK() * zoom;
+  ox = e.clientX - (wx - wy) * K;                       // keep the point under the cursor still
+  oy = e.clientY - (wx + wy) * K * 0.5;
+  const c = unproject(cv.width / 2, cv.height / 2); camX = c[0]; camY = c[1];
+}, { passive: false });
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === ' ') { paused = !paused; e.preventDefault(); }
+  if (k === ',') warp = WARPS[Math.max(0, WARPS.indexOf(warp) - 1)];
+  if (k === '.') warp = WARPS[Math.min(WARPS.length - 1, WARPS.indexOf(warp) + 1)];
+  if (k === 't') el('tel').classList.toggle('hide');
+  if (k === 'f') follow = !follow;
+  if (k === 'd') showWork = !showWork;
+  if (k === 'r') wipeBrain();
+  if (k === 'c') {
+    resetPark(); paintGround();
+    sctx.clearRect(0, 0, skid.width, skid.height);
+    startTrial();
+  }
+});
+
+/* ------------------------------------------------------------------ start */
+resetPark();
+paintGround();
+fitCam();
+startTrial();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
