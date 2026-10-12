@@ -481,7 +481,16 @@ state alert
    and 82% of parking manoeuvres were failing because of it. Dimensional
    fidelity is not worth a car park nobody can park in, and the extra 40 cm
    costs only eight bays a row. */
-const PARK_L = 172, PARK_W = 73, BAND = 15.6, BAY = 2.95;
+/* Widened 2026-10-12 (Thomas: "widen the whole map slightly and provide
+   generous road widths"). PARK_W was 73, measured off Google Maps; it is 82 now
+   because every road in it is 8 m - aisles were 6.0 and 6.4, the access road 7 -
+   and the bays are the same size as before. The measured site is genuinely
+   tighter than a car park built from this sim's driving can work in: cars could
+   not swing out of a space without their nose meeting the row opposite.
+   A band is bay row 4.8 + aisle + bay row 4.8. */
+const AISLE_W = 8.0;                          // a band's driving aisle
+const AISLE_C = 4.8 + AISLE_W / 2;            // its centreline, from the band's edge
+const PARK_L = 172, PARK_W = 82, BAND = 4.8 + AISLE_W + 4.8, BAY = 2.95;
 const X0 = 40, X1 = X0 + PARK_L, Y0 = 2, Y1 = Y0 + PARK_W;
 
 /* Across the car park, edge to edge, each thing gets its own strip:
@@ -499,9 +508,9 @@ const X0 = 40, X1 = X0 + PARK_L, Y0 = 2, Y1 = Y0 + PARK_W;
    island rather than opening straight onto them. */
 const WALK_W  = 5;      // the colonnade: raised, kerbed, and a dense bollard line
 const PRIME_W = 5.2;    // the row that faces the doors, nose-in to that kerb
-const PAISLE  = 6.4;    // and the wide aisle that serves it
+const PAISLE  = 8.0;    // and the wide aisle that serves it (was 6.4)
 const ISLAND_W = 2.6;   // kerbed island carrying the hoop shelters and the masts
-const ROAD_W  = 7.0;    // the access road along the railway fence
+const ROAD_W  = 8.0;    // the access road along the railway fence (was 7.0)
 const LANE_W  = ROAD_W; // 'the lane' in the telemetry means that road
 const BAND0 = Y0 + WALK_W + PRIME_W + PAISLE;
 const NBANDS = Math.floor((PARK_W - (BAND0 - Y0) - ISLAND_W - ROAD_W) / BAND);
@@ -511,7 +520,7 @@ const ISLAND_Y = BAND0 + NBANDS * BAND + ISLAND_W / 2;
 const ROWY = [Y0 + WALK_W + 2.6];                    // the prized row
 /* 2.25/13.35 rather than 2.4/13.2: four more inches of aisle at each band,
    taken off a bay depth that was 4.8 m for a car now under 4.4. */
-for (const b of BANDS){ ROWY.push(b + 2.25); ROWY.push(b + 13.35); }
+for (const b of BANDS){ ROWY.push(b + 2.25); ROWY.push(b + BAND - 2.25); }
 /* The back-to-back lines between bay rows, where a mast can stand in the corner of
    four spaces instead of in the middle of the road. */
 const BAYLINE = function(k){ return X0 + 4 + k * BAY; };
@@ -2485,7 +2494,7 @@ const PUDDLES = (function(){
     out.push({ x:x, y:y, r:r, t:t, parts:parts, f:0 });
   };
   const lanes = [Y0 + WALK_W + PRIME_W + PAISLE / 2, Y1 - ROAD_W / 2];
-  for (const b of BANDS) lanes.push(b + 7.8);
+  for (const b of BANDS) lanes.push(b + AISLE_C);
   for (const ly of lanes)
     for (let k = 0; k < 6; k++)
       add(X0 + 10 + rnd() * (PARK_L - 20), ly + (rnd() - 0.5) * 2.2,
@@ -3376,7 +3385,10 @@ const LT = 3.9, LH = 8.6;                 // tractor wheelbase, hitch to axle
 
    LANE_Y is the strip behind the store: the rear wing covers the service road out
    to y 72, so the lane in is the clear metres between the wing and the boundary. */
-const DOORS = [Y0 + 54, Y0 + 60, Y0 + 66];      // the three roller doors, as drawn
+/* Anchored to the RAILWAY edge (Y1), like LANE_Y and the service road, so
+   widening the car park leaves the dock manoeuvre exactly as it was tuned. They
+   were Y0 + 54/60/66 when Y1 was Y0 + 73. */
+const DOORS = [Y1 - 19, Y1 - 13, Y1 - 7];       // the three roller doors, as drawn
 const LANE_Y = Y1 - 1.5;                        // the lane in, behind the rear wing
 const DOCK = { x:X1 + 13.5, y:DOORS[1], h:Math.PI };
 const LORRY = { on:false, phase:'away', t:0, x:0, y:0, h:Math.PI, ht:Math.PI,
@@ -3629,7 +3641,7 @@ function setLorry(w, t){ void t; stepLorry(w, DT); }
    a lane a car is meant to drive down. */
 function aisleAudit(){
   const aisles = [[Y0 + WALK_W + PRIME_W, Y0 + WALK_W + PRIME_W + PAISLE]];
-  for (const b of BANDS) aisles.push([b + 4.8, b + 10.8]);
+  for (const b of BANDS) aisles.push([b + 4.8, b + 4.8 + AISLE_W]);
   aisles.push([Y1 - ROAD_W, Y1]);
   /* Each item with the half-depth it actually occupies, because checking centres
      alone let a mast sit exactly on a bay line with its 1.5 m bollard ring sticking
@@ -4474,7 +4486,7 @@ function freshCar(x, y, h){
   return { x:x, y:y, h:h || 0, vx:0, vy:0, r:0, ax:0, d:0, ar:0,
            contact:0, dmg:0, hits:[], touching:false };
 }
-let car = freshCar(X0 + 30, Y0 + 40, 0);
+let car = freshCar(X0 + 30, BANDS[1] + AISLE_C, 0);      // an aisle, whatever the widths
 const CTL = { steer:0, thr:0, brk:0, hb:0, rev:0 };
 
 /* §3.2 slip angles are taken in each wheel's own frame against its own
@@ -4889,7 +4901,7 @@ function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
    25 and the standard error comes down by a third. */
 const STARTS = (function(){
   const aisles = [Y0 + WALK_W + PRIME_W + PAISLE / 2];
-  for (const b of BANDS) aisles.push(b + 7.8);
+  for (const b of BANDS) aisles.push(b + AISLE_C);
   aisles.push(Y1 - ROAD_W / 2 - 1.5);
   const out = [];
   let k = 0;
@@ -4974,7 +4986,7 @@ function runTests(){
       sh.braked < sh.free - 3 && sh.yaw < 6);
 
   /* the long clear aisle: Y sits between two parked rows, 160 m of run */
-  const aisleY = BANDS[0] + 7.8;
+  const aisleY = BANDS[0] + AISLE_C;
   const straight = driveSim(9, X0 + 8, aisleY, 0, buildSiteBare);
   add('clearance vs real free space', (straight.honesty * 100).toFixed(0) + '%',
       'not the 25% the cone bug gives', straight.honesty > 0.5 &&
@@ -4984,7 +4996,7 @@ function runTests(){
   add('pace down a 160 m aisle', straight.mean.toFixed(0) + ' mph',
       'well over 19 mph', straight.mean > 24);
   /* Loose in the bays, which is where the angled misparking and the clutter are. */
-  const scat = driveSim(60, X0 + 20, BANDS[1] + 7.8, 0.6);
+  const scat = driveSim(60, X0 + 20, BANDS[1] + AISLE_C, 0.6);
   /* The real §5.3 property is that pace tracks clearance. Testing an absolute mph
      figure in an environment the handover never described would just be testing my
      guess at what 'good' means. */
@@ -4999,7 +5011,7 @@ function runTests(){
        'rubber needs 1.8, so §6 is what makes him skid');
   base('baseline: bays pace', scat.mean.toFixed(1) + ' mph, clearance ' +
        scat.honesty.toFixed(2) + ' honest', 'clearance-limited, as designed');
-  const loose = driveSim(60, X0 + 20, BANDS[1] + 7.8, 0.2);
+  const loose = driveSim(60, X0 + 20, BANDS[1] + AISLE_C, 0.2);
   /* This was a single 60 s run against a threshold of 8 cells. Measured across
      25 starts, 8 of them come in under 8 cells - with the ORIGINAL perception as
      well as the new one. So the test failed about a third of the time by chance
@@ -5403,7 +5415,7 @@ function edgeOf(a, b){
 function buildLattice(){
   LANES.length = 0; RNODE.length = 0; REDGE.length = 0;
   LANES.push(Y0 + WALK_W + PRIME_W + PAISLE / 2);          // the prime aisle
-  for (const b of BANDS) LANES.push(b + 7.8);              // one per band
+  for (const b of BANDS) LANES.push(b + AISLE_C);          // one per band
   LANES.push(Y1 - ROAD_W / 2);                             // the service road
 
   /* Along each lane, plus a column at each end of the bay rows - the only two
@@ -6298,9 +6310,9 @@ const AREAS = [
   { k:'walk',    x0:X0,  x1:X1 + 4, y0:Y0, y1:KERB_Y },
   { k:'island',  x0:X0 + 9, x1:X1 - 6, y0:ISLAND_Y - ISLAND_W / 2,
                  y1:ISLAND_Y + ISLAND_W / 2 },
-  { k:'grass',   x0:X0 + 18, x1:X0 + 46, y0:BANDS[0] + 15.6, y1:BANDS[0] + 20 },
-  { k:'grass',   x0:X0 + 74, x1:X0 + 102, y0:BANDS[1] + 15.6, y1:BANDS[1] + 20 },
-  { k:'grass',   x0:X0 + 120, x1:X0 + 148, y0:BANDS[0] + 15.6, y1:BANDS[0] + 20 },
+  { k:'grass',   x0:X0 + 18, x1:X0 + 46, y0:BANDS[0] + BAND, y1:BANDS[0] + BAND + 4.4 },
+  { k:'grass',   x0:X0 + 74, x1:X0 + 102, y0:BANDS[1] + BAND, y1:BANDS[1] + BAND + 4.4 },
+  { k:'grass',   x0:X0 + 120, x1:X0 + 148, y0:BANDS[0] + BAND, y1:BANDS[0] + BAND + 4.4 },
   { k:'grass',   x0:-20, x1:340, y0:Y1,    y1:Y1 + 6 },
   { k:'ballast', x0:-20, x1:340, y0:Y1 + 6, y1:Y1 + 24 },
   { k:'scrub',   x0:-20, x1:340, y0:Y1 + 24, y1:Y1 + 50 },
@@ -6572,14 +6584,18 @@ function spitch(X, Y, L, W, z0, z1, col, axis, n){
   }
 }
 (function buildScenery(){
-  const SMY = Y0 - 12 + 64 / 2, SRY = Y0 + 50 + 20 / 2;
-  sbox(X1 + 60, SMY, 120, 64, 0, 5.4 * BH, WALL);          // store, main shed
+  /* The rear wing and dock hang off the railway edge (see DOORS); the main
+     shed runs from its old river-side line to meet the wing, so it deepens by
+     however much the car park was widened. */
+  const SMD = (Y1 - 23) - (Y0 - 12) + 2;            // 64 at the measured width
+  const SMY = Y0 - 12 + SMD / 2, SRY = Y1 - 13;
+  sbox(X1 + 60, SMY, 120, SMD, 0, 5.4 * BH, WALL);         // store, main shed
   sbox(X1 + 70.5, SRY, 99, 20, 0, 5.4 * BH, WALL);         // rear wing
   for (let i = 0; i < 6; i++)
-    spitch(X1 + 10 + i * 20, SMY, 20, 64, 5.4 * BH, 9.6 * BH, ROOF, 'y');
+    spitch(X1 + 10 + i * 20, SMY, 20, SMD, 5.4 * BH, 9.6 * BH, ROOF, 'y');
   for (let i = 0; i < 5; i++)
     spitch(X1 + 31 + i * 20, SRY, 20, 20, 5.4 * BH, 9.2 * BH, ROOF, 'y');
-  sbox(X1 + 1, SMY, 3, 58, 0, 6.2 * BH, '#6f7a7c');        // frontage glazing
+  sbox(X1 + 1, SMY, 3, SMD - 6, 0, 6.2 * BH, '#6f7a7c');   // frontage glazing
   sbox(X1 - 0.5, SMY, 1.2, 54, 4.0 * BH, 5.6 * BH, '#c3502f');   // the red sign
   sbox(X1 + 18, SRY, 4, 20, 0, 1.2 * BH, '#6d7378');       // loading platform
   for (const dy of [SRY - 6, SRY, SRY + 6])
