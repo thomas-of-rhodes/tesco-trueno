@@ -41,10 +41,11 @@ function parseCast(txt){
     } else if (w[0] === 'box' && st){
       const col = w[7];
       if (col === 'none') continue;
-      let mir = false, rot = 0, lit = 0;
+      let mir = false, rot = 0, lit = 0, nm = '';
       for (let i = 8; i < w.length; i++){
         const kv = w[i].split('=');
-        if (kv[0] === 'mir') mir = kv[1] === '1';
+        if (kv[0] === 'n') nm = kv[1] || '';
+        else if (kv[0] === 'mir') mir = kv[1] === '1';
         else if (kv[0] === 'rot') rot = parseFloat(kv[1]);
         /* lit=<0..1>: self-illuminated. Shading is skipped and the box holds
            its colour whatever the hour, so headlights read as headlights once
@@ -57,7 +58,7 @@ function parseCast(txt){
       const hex = paint ? '#8e9398' : col.length > 7 ? col.slice(0, 7) : col;   // drop any alpha
       for (const sg of (mir ? [1, -1] : [1]))
         st.push({ f:+w[1], l:(+w[2]) * sg, z:+w[3], L:+w[4], W:+w[5], H:+w[6],
-                  rot:rot * sg, col:hex, lit:lit, paint:paint, part:part });
+                  rot:rot * sg, col:hex, lit:lit, paint:paint, part:part, n:nm });
     }
   }
   return out;
@@ -65,6 +66,38 @@ function parseCast(txt){
 /* The sprite files (sprites/*.sprite.js) each push their text onto
    SPRITE_SOURCES as they load, ahead of the code. */
 const CAST = parseCast((window.SPRITE_SOURCES || []).join('\n'));
+/* Draw-list items for a sprite standing at (x, y) facing h, its base at z.
+   o.state picks a state (default the first), o.paint fills `paint` boxes,
+   o.cid tags the items, and o.each(box, item) may adjust any item - the
+   recovery truck flashes its beacons through it. */
+function spriteItems(name, x, y, h, z, o){
+  const sp = CAST[name];
+  if (!sp) return [];
+  const st = (o && o.state && sp.states[o.state]) || sp.states[sp.order[0]];
+  if (!st) return [];
+  const ch = Math.cos(h), sh = Math.sin(h), out = [];
+  for (const q of st){
+    const it = { cid:o ? o.cid : undefined, lit:q.lit,
+                 X:x + q.f * ch - q.l * sh, Y:y + q.f * sh + q.l * ch,
+                 L:q.L, W:q.W, rot:h + q.rot, z0:z + q.z, z1:z + q.z + q.H,
+                 col:(q.paint && o && o.paint) ? o.paint : q.col };
+    if (o && o.each) o.each(q, it);
+    out.push(it);
+  }
+  return out;
+}
+/* A named anchor of a sprite, in its own frame, or null. */
+function anchorOf(name, a){
+  const sp = CAST[name];
+  return (sp && sp.anchors[a]) || null;
+}
+/* An anchor placed in the world for a sprite at (x, y) facing h. */
+function anchorAt(name, a, x, y, h){
+  const q = anchorOf(name, a);
+  if (!q) return null;
+  const ch = Math.cos(h), sh = Math.sin(h);
+  return [x + q.f * ch - q.l * sh, y + q.f * sh + q.l * ch, q.z];
+}
 
 /* ------------------------------------------------------------- the beings ---
    Each one is a position, a heading, a sprite state and a want. No planning and
@@ -973,6 +1006,9 @@ function syncBus(w){
 
 /* Where the door is, which is where people appear and where they queue. */
 function busDoor(){
+  /* The sprite's `door` anchor (2.6 forward, 0.9 out from the side). */
+  const d = anchorAt('bus', 'door', BUS.x, BUS.y, BUS.h);
+  if (d) return [d[0], d[1]];
   const ch = Math.cos(BUS.h), sh = Math.sin(BUS.h);
   return [BUS.x + ch * 2.6 - sh * (BUS_W / 2 + 0.9),
           BUS.y + sh * 2.6 + ch * (BUS_W / 2 + 0.9)];

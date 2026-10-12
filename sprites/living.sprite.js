@@ -1,5 +1,6 @@
 /* Tesco Trueno sprites: living things.
-   People and animals: the cast, the gulls, the fox.
+   People and animals: the cast, the gulls, the fox - and the umbrella they
+   carry, which flies off on its own in a squall.
    Open THIS file in sprite-editor.html and save it back here. Everything
    between the backticks is plain sprite text; the line around it is only
    there so the game can load it from disk without a web server. */
@@ -234,4 +235,13 @@ state alert
   box  0.28  0.07  0.60   0.07 0.08 0.13  #8e4018  mir=1 n=ear
   box -0.34  0.00  0.28   0.28 0.16 0.15  #b5561f  rot=0.34 n=tail
   box -0.48  0.00  0.40   0.14 0.13 0.12  #efeae2  n=tailtip
+sprite umbrella
+size 1.05 1.05 1.15
+state held
+  box  0.12  0.22  0     0.05 0.05 1.00  #2a2d30  n=pole
+  box  0     0     1.00  1.05 1.05 0.08  paint     n=canopy
+  box  0     0     1.08  0.60 0.60 0.07  paint     n=crown
+state blown
+  box  0     0     0     1.00 1.00 0.08  paint     n=canopy
+  box  0     0     0.08  0.55 0.55 0.07  paint     n=crown
 `);

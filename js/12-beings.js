@@ -1196,12 +1196,11 @@ function beingParts(b){
     for (const q of boxes) top = Math.max(top, q.z + q.H);
     const z = b.z + bob + top;
     /* Held in the right hand, leaning downwind in a gust. */
-    const px = b.x + 0.12 * ch - 0.22 * sh, py = b.y + 0.12 * sh + 0.22 * ch;
     const wv = windNow(), lean = 0.012 * SQ.gust;
     const kx = b.x + wv[0] * lean, ky = b.y + wv[1] * lean;
-    out.push({ cid:b.cid, X:px, Y:py, rot:b.h, L:0.05, W:0.05, z0:z - 0.75, z1:z + 0.25, col:'#2a2d30' });
-    out.push({ cid:b.cid, X:kx, Y:ky, rot:b.h, L:1.05, W:1.05, z0:z + 0.25, z1:z + 0.33, col:b.brolly });
-    out.push({ cid:b.cid, X:kx, Y:ky, rot:b.h, L:0.6, W:0.6, z0:z + 0.33, z1:z + 0.40, col:b.brolly });
+    /* The umbrella sprite: its canopy over the head, its pole in the right
+       hand (the pole box carries the hand offset), canopy in their colour. */
+    for (const q of spriteItems('umbrella', kx, ky, b.h, z - 0.75, { cid:b.cid, paint:b.brolly })) out.push(q);
   }
   return out;
 }

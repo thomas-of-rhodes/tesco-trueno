@@ -439,13 +439,13 @@ function render(){
      copy on top: the shelters appeared twice, and the island kerb, whose box is
      84 m long, was being rendered as a four-metre grey WALL down the length of
      the car park. It has been there since the island went in. */
-  for (let k = 0; k < WORLD.boxes.length; k++){
-    const b = WORLD.boxes[k];
-    if (b.off) continue;
-    const isLorry = WORLD.always && WORLD.always.indexOf(k) >= 0;
-    if (!isLorry) continue;            // parked cars are drawn from their sprite
-    items.push({ X:b.x, Y:b.y, rot:b.a, L:b.hl * 2, W:b.hw * 2, z0:0,
-                 z1:3.6, col:'#b8bcbd' });
+  /* The artic, from its sprites, at its two collision boxes (the articulated
+     model moves those). It was two grey slabs until 2026-10-12. */
+  if (LORRY.tractor >= 0 && WORLD.boxes[LORRY.tractor] && !WORLD.boxes[LORRY.tractor].off){
+    const tb = WORLD.boxes[LORRY.tractor], rb = WORLD.boxes[LORRY.trailer];
+    for (const q of spriteItems('lorry-tractor', tb.x, tb.y, tb.a, 0, { cid:'lorry' })) items.push(q);
+    if (rb && !rb.off)
+      for (const q of spriteItems('lorry-trailer', rb.x, rb.y, rb.a, 0, { cid:'lorry' })) items.push(q);
   }
   /* A parked car drawn from its own sprite rather than as a grey slab. They are
      the single most numerous thing in the car park, so it is worth the boxes. */
@@ -453,23 +453,8 @@ function render(){
      the scenery and the artic are: body, a darker window band, a lighter roof,
      and the destination blind, which is the one detail that makes it read as a
      bus rather than a van. */
-  if (BUS.on){
-    const ch = Math.cos(BUS.h), sh = Math.sin(BUS.h);
-    const put = function(f, l, z0, z1, L, W, col, lit){
-      items.push({ cid:'bus', lit:lit || 0,
-                   X:BUS.x + f * ch - l * sh, Y:BUS.y + f * sh + l * ch,
-                   L:L, W:W, rot:BUS.h, z0:z0, z1:z1, col:col });
-    };
-    put(0, 0, 0.42, 2.05, BUS_L, BUS_W, '#2d4f63');            // body
-    put(0, 0, 2.05, 2.95, BUS_L - 0.5, BUS_W - 0.12, '#9fb0b8'); // roof
-    for (const sgn of [1, -1])
-      put(0.3, sgn * (BUS_W / 2 - 0.02), 1.30, 1.95, BUS_L - 1.8, 0.1, '#16202a');
-    put(BUS_L / 2 - 0.1, 0, 1.55, 2.0, 0.12, BUS_W - 1.0, '#d8c37a', 0.7);  // blind
-    put(-BUS_L / 2 + 0.1, 0, 0.6, 1.0, 0.12, BUS_W - 0.9, '#8a2f2f', 0.5);  // tail light
-    for (const f of [BUS_L / 2 - 1.5, -BUS_L / 2 + 2.2])
-      for (const sgn of [1, -1])
-        put(f, sgn * (BUS_W / 2 - 0.1), 0.0, 0.52, 0.95, 0.28, '#14181b');  // wheels
-  }
+  if (BUS.on)
+    for (const q of spriteItems('bus', BUS.x, BUS.y, BUS.h, 0, { cid:'bus' })) items.push(q);
   for (const bay of BAYS){
     if (!bay.car) continue;
     const sp = CAST[bay.car.model.sprite];
@@ -484,12 +469,12 @@ function render(){
                    z0:q.z, z1:q.z + q.H, col:q.col });
     /* Parking tickets, one yellow slip each, on the roof by the windscreen
        where the camera can see them. */
+    /* At the car's own `ticket` anchor - a Miata's roof is not a Discovery's. */
+    const ta = anchorOf(bay.car.model.sprite, 'ticket') || { f:0.55, l:0, z:1.47 };
     for (let k = 0; k < (bay.tickets || 0); k++){
-      const f = 0.55, l = -0.45 + k * 0.42;
-      items.push({ cid:'p' + bay.box, lit:0,
-                   X:bx.x + f * ch - l * sh, Y:bx.y + f * sh + l * ch,
-                   L:0.34, W:0.26, rot:bx.a + 0.15 * (k - 1),
-                   z0:1.47, z1:1.50, col:'#f2d23c' });
+      const f = ta.f, l = ta.l - 0.42 + k * 0.42;
+      for (const q of spriteItems('ticket', bx.x + f * ch - l * sh, bx.y + f * sh + l * ch,
+                                  bx.a + 0.15 * (k - 1), ta.z, { cid:'p' + bay.box })) items.push(q);
     }
   }
   /* Height is nearly unreadable in an isometric view without one of these: a
@@ -569,10 +554,8 @@ function render(){
     fadeFrom(c, n0);
   }
   /* Umbrellas on the loose. */
-  for (const u of FLY){
-    items.push({ X:u.x, Y:u.y, rot:u.h, L:1.0, W:1.0, z0:u.z, z1:u.z + 0.08, col:u.col });
-    items.push({ X:u.x, Y:u.y, rot:u.h, L:0.55, W:0.55, z0:u.z + 0.08, z1:u.z + 0.15, col:u.col });
-  }
+  for (const u of FLY)
+    for (const q of spriteItems('umbrella', u.x, u.y, u.h, u.z, { state:'blown', paint:u.col })) items.push(q);
   paintOrder(items);
   /* A lit box keeps its colour: no face shading, and it brightens as the light
      goes, so the same headlight is a detail at noon and a beacon at 3 a.m. */

@@ -1,5 +1,6 @@
 /* Tesco Trueno sprites: vehicles.
-   Everything with wheels: Trueno, the four NPC models, the trolley.
+   Everything with wheels: Trueno, the four NPC models, the trolley, the bus,
+   the recovery truck, the artic (tractor + trailer), and the parking ticket.
    Open THIS file in sprite-editor.html and save it back here. Everything
    between the backticks is plain sprite text; the line around it is only
    there so the game can load it from disk without a web server. */
@@ -40,6 +41,8 @@
 
 sprite trueno
 mass 1120
+size 4.08 1.92 1.16
+anchor ticket 0.008 0 1.17
 state as-built
   box  1.22  0.84  0.00   0.60 0.24 0.34  #0d0e10  mir=1 n=wheel.front
   box -1.26  0.84  0.00   0.60 0.24 0.34  #0d0e10  mir=1 n=wheel.rear
@@ -73,6 +76,8 @@ state hunkered
 
 sprite jazz
 mass 1050
+size 4.04 1.78 1.5
+anchor ticket 0.31 0 1.51
 state parked
   box  1.30  0.78  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.front
   box -1.30  0.78  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.rear
@@ -85,6 +90,8 @@ state parked
 
 sprite a4
 mass 1600
+size 4.8 1.96 1.26
+anchor ticket 0.12 0 1.27
 state parked
   box  1.42  0.86  0.00   0.64 0.24 0.33  #0d0e10  mir=1 n=wheel.front
   box -1.42  0.86  0.00   0.64 0.24 0.33  #0d0e10  mir=1 n=wheel.rear
@@ -99,6 +106,8 @@ state parked
 
 sprite discovery
 mass 2400
+size 4.98 2.08 1.96
+anchor ticket -0.8 0 1.97
 state parked
   box  1.48  0.90  0.00   0.76 0.28 0.40  #0d0e10  mir=1 n=wheel.front
   box -1.48  0.90  0.00   0.76 0.28 0.40  #0d0e10  mir=1 n=wheel.rear
@@ -113,6 +122,8 @@ state parked
 
 sprite miata
 mass 980
+size 4.1 1.74 1.06
+anchor ticket -0.19 0 1.07
 state parked
   box  1.22  0.76  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.front
   box -1.22  0.76  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.rear
@@ -170,4 +181,66 @@ state child-seat
   box -0.38  0.00  0.80   0.08 0.46 0.22  #7a4043  n=seat.back
   box -0.50  0.00  1.00   0.07 0.60 0.08  #7a4043  n=handle
   box  0.14  0.24  0.10   0.66 0.05 0.18  #798287  mir=1 n=frame
+sprite bus
+mass 12000
+size 11.5 2.55 2.95
+anchor door 2.6 2.175 0
+state service
+  box  0     0      0.42   11.5  2.55  1.63  #2d4f63  n=body
+  box  0     0      2.05   11.0  2.43  0.90  #9fb0b8  n=roof
+  box  0.3   1.255  1.30    9.7  0.10  0.65  #16202a  mir=1 n=windows
+  box  5.65  0      1.55    0.12 1.55  0.45  #d8c37a  lit=0.7 n=blind
+  box -5.65  0      0.60    0.12 1.65  0.40  #8a2f2f  lit=0.5 n=tail
+  box  4.25  1.175  0       0.95 0.28  0.52  #14181b  mir=1 n=wheel
+  box -3.55  1.175  0       0.95 0.28  0.52  #14181b  mir=1 n=wheel
+
+sprite tow
+mass 7500
+size 6.6 2.35 2.62
+anchor bed -0.95 0 0.95
+state working
+  box  0     0      0.35   6.4   2.2   0.40  #2b3135  n=chassis
+  box  2.35  0      0.75   1.7   2.25  1.70  #d8a520  n=cab
+  box  2.95  0      1.30   0.12  2.0   0.80  #20303a  n=windscreen
+  box -0.95  0      0.75   4.3   2.35  0.20  #4a5258  n=bed
+  box  2.35 -0.6    2.45   0.3   0.3   0.17  #ffcc33  lit=1 n=beaconA
+  box  2.35  0.6    2.45   0.3   0.3   0.17  #ffcc33  lit=1 n=beaconB
+  box  2.2   1.05   0      0.95  0.3   0.75  #14181b  mir=1 n=wheel
+  box -1.6   1.05   0      0.95  0.3   0.75  #14181b  mir=1 n=wheel
+
+sprite lorry-tractor
+mass 8000
+size 6.0 2.5 3.6
+anchor hitch -1.5 0 1.15
+state day-cab
+  box  0     0      0.45   6.0   2.3   0.55  #2b3135  n=chassis
+  box  2.05  0      1.00   1.9   2.5   2.60  #e8eae8  n=cab
+  box  3.02  0      2.00   0.06  2.2   1.05  #20303a  n=windscreen
+  box  2.05  0      3.60   1.7   2.3   0.10  #2a4f9a  n=roof
+  box  3.03  0.9    1.10   0.05  0.35  0.18  #f4f5f1  mir=1 lit=1 n=headlamp
+  box  0.4   1.2    0.55   1.2   0.15  0.55  #9aa3a6  mir=1 n=tank
+  box -1.5   0      1.00   1.2   1.6   0.15  #3a3f45  n=fifth-wheel
+  box  2.05  1.1    0      1.0   0.35  1.00  #14181b  mir=1 n=wheel
+  box -1.2   1.1    0      1.0   0.35  1.00  #14181b  mir=1 n=wheel
+  box -2.4   1.1    0      1.0   0.35  1.00  #14181b  mir=1 n=wheel
+
+sprite lorry-trailer
+mass 30000
+size 13.6 2.55 4.0
+anchor kingpin 5.3 0 1.15
+state box
+  box  0     0      1.15   13.6  2.55  2.85  #e9ebea  n=box
+  box  0     1.28   1.40   13.0  0.02  0.18  #2a4f9a  mir=1 n=stripe-blue
+  box  0     1.28   1.62   13.0  0.02  0.10  #c8323a  mir=1 n=stripe-red
+  box -6.81  0      1.20   0.04  2.4   2.75  #c9cdcc  n=doors
+  box -6.82  1.0    1.20   0.03  0.25  0.15  #c0392b  mir=1 lit=0.8 n=tail
+  box  0     0      0.85   13.2  1.0   0.30  #2b3135  n=chassis
+  box  4.2   1.0    0      0.25  0.25  1.15  #3a3f45  mir=1 n=landing-leg
+  box -4.1   1.1    0      1.0   0.35  1.00  #14181b  mir=1 n=wheel
+  box -5.3   1.1    0      1.0   0.35  1.00  #14181b  mir=1 n=wheel
+
+sprite ticket
+size 0.34 0.26 0.03
+state slip
+  box  0  0  0   0.34 0.26 0.03  #f2d23c  n=slip
 `);

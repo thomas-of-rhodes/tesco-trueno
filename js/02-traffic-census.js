@@ -2092,35 +2092,30 @@ function stepCars(dt){
    bus. Cab at the front, a flat bed behind, an amber beacon, and whatever it
    is carrying - lifted from the bay to the bed in an arc while it loads. */
 function towParts(c){
-  const out = [], ch = Math.cos(c.h), sh = Math.sin(c.h);
-  const put = function(f, l, z0, z1, L, W, col, lit){
-    out.push({ cid:c.cid, lit:lit || 0, X:c.x + f * ch - l * sh, Y:c.y + f * sh + l * ch,
-               L:L, W:W, rot:c.h, z0:z0, z1:z1, col:col });
-  };
-  put(0, 0, 0.35, 0.75, 6.4, 2.2, '#2b3135');                 // chassis
-  put(2.35, 0, 0.75, 2.45, 1.7, 2.25, '#d8a520');              // cab
-  put(2.95, 0, 1.30, 2.10, 0.12, 2.0, '#20303a');              // windscreen
-  put(-0.95, 0, 0.75, 0.95, 4.3, 2.35, '#4a5258');             // the bed
+  /* From the `tow` sprite: beacons flash alternately, and whatever it is
+     carrying rides at the sprite's `bed` anchor, lifted from the bay to the
+     bed in an arc while it loads. */
   const flash = (Math.sin(simClockNow() * 9) > 0) ? 1 : 0;
-  put(2.35, -0.6, 2.45, 2.62, 0.3, 0.3, flash ? '#ffcc33' : '#7a5a10', flash);
-  put(2.35, 0.6, 2.45, 2.62, 0.3, 0.3, flash ? '#7a5a10' : '#ffcc33', 1 - flash);
-  for (const f of [2.2, -1.6]) for (const sgn of [1, -1])
-    put(f, sgn * 1.05, 0.0, 0.75, 0.95, 0.3, '#14181b');       // wheels
+  const out = spriteItems('tow', c.x, c.y, c.h, 0, { cid:c.cid, each:function(q, it){
+    if (q.n === 'beaconA' || q.n === 'beaconB'){
+      const on = (q.n === 'beaconA') === !!flash;
+      it.col = on ? '#ffcc33' : '#7a5a10'; it.lit = on ? 1 : 0;
+    }
+  } });
   const t = c.tow;
   if (t && (t.lifting || t.loaded)){
     const sp = CAST[t.model.sprite];
     const boxes = sp ? sp.states[sp.order[0]] : null;
     if (boxes){
       const k = t.loaded ? 1 : Math.min(1, t.loadT / 4.5);
-      const bedX = c.x - 0.95 * ch, bedY = c.y - 0.95 * sh;
+      const bed = anchorAt('tow', 'bed', c.x, c.y, c.h) || [c.x, c.y, 0.95];
+      const bedX = bed[0], bedY = bed[1];
       const fx = t.from ? t.from.x : bedX, fy = t.from ? t.from.y : bedY;
       const X = fx + (bedX - fx) * k, Y = fy + (bedY - fy) * k;
       const A = (t.from ? t.from.a : c.h) + angDiff(c.h, t.from ? t.from.a : c.h) * k;
-      const Z = 0.95 * k + Math.sin(Math.PI * k) * 1.1;
-      const ca = Math.cos(A), sa = Math.sin(A);
-      for (const q of boxes)
-        out.push({ cid:c.cid, lit:q.lit, X:X + q.f * ca - q.l * sa, Y:Y + q.f * sa + q.l * ca,
-                   L:q.L, W:q.W, rot:A + q.rot, z0:q.z + Z, z1:q.z + q.H + Z, col:q.col });
+      const Z = bed[2] * k + Math.sin(Math.PI * k) * 1.1;
+      for (const q of spriteItems(t.model.sprite, X, Y, A, Z, { cid:c.cid, paint:t.veh && t.veh.paint }))
+        out.push(q);
     }
   }
   return out;
