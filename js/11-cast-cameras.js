@@ -11,8 +11,10 @@
    mesh and glass are dropped: 23 boxes of 260 use them and the box renderer
    takes one colour. */
 function parseCast(txt){
+  /* v2 (2026-10-12): `size`, `anchor`, `part`/`endpart`, and `paint` as a
+     colour. v1 files parse unchanged. */
   const out = {};
-  let sp = null, st = null;
+  let sp = null, st = null, part = null;
   for (const raw of txt.split('\n')){
     let t = raw.trim();
     if (!t || t.charAt(0) === '#') continue;
@@ -21,11 +23,21 @@ function parseCast(txt){
     if (!t) continue;
     const w = t.split(/\s+/);
     if (w[0] === 'sprite'){
-      sp = { name:w[1], mass:1, states:{}, order:[] }; out[w[1]] = sp; st = null;
+      sp = { name:w[1], mass:1, states:{}, order:[], anchors:{}, size:null, parts:{} };
+      out[w[1]] = sp; st = null; part = null;
     } else if (w[0] === 'mass' && sp){
       sp.mass = parseFloat(w[1]);
+    } else if (w[0] === 'size' && sp){
+      sp.size = { L:+w[1], W:+w[2], H:+w[3] };
+    } else if (w[0] === 'anchor' && sp){
+      sp.anchors[w[1]] = { f:+w[2], l:+w[3], z:+w[4] };
     } else if (w[0] === 'state' && sp){
-      st = []; sp.states[w[1]] = st; sp.order.push(w[1]);
+      st = []; sp.states[w[1]] = st; sp.order.push(w[1]); part = null;
+    } else if (w[0] === 'part' && sp){
+      part = w[1];
+      sp.parts[part] = { f:+w[2] || 0, l:+w[3] || 0, z:+w[4] || 0 };
+    } else if (w[0] === 'endpart'){
+      part = null;
     } else if (w[0] === 'box' && st){
       const col = w[7];
       if (col === 'none') continue;
@@ -39,15 +51,20 @@ function parseCast(txt){
            there is a night palette to read them against. */
         else if (kv[0] === 'lit') lit = kv[1] === undefined ? 1 : parseFloat(kv[1]);
       }
-      const hex = col.length > 7 ? col.slice(0, 7) : col;   // drop any alpha
+      /* `paint`: the owner's colour, filled in at draw time. A neutral grey
+         stands in wherever nothing has been chosen. */
+      const paint = col === 'paint';
+      const hex = paint ? '#8e9398' : col.length > 7 ? col.slice(0, 7) : col;   // drop any alpha
       for (const sg of (mir ? [1, -1] : [1]))
         st.push({ f:+w[1], l:(+w[2]) * sg, z:+w[3], L:+w[4], W:+w[5], H:+w[6],
-                  rot:rot * sg, col:hex, lit:lit });
+                  rot:rot * sg, col:hex, lit:lit, paint:paint, part:part });
     }
   }
   return out;
 }
-const CAST = parseCast((document.getElementById('cast') || {}).textContent || '');
+/* The sprite files (sprites/*.sprite.js) each push their text onto
+   SPRITE_SOURCES as they load, ahead of the code. */
+const CAST = parseCast((window.SPRITE_SOURCES || []).join('\n'));
 
 /* ------------------------------------------------------------- the beings ---
    Each one is a position, a heading, a sprite state and a want. No planning and
