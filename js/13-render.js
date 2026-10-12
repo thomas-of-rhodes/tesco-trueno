@@ -726,6 +726,8 @@ function plain(){
       rows2.push(['<span class="bad">unaccounted</span>', '<span class="bad">' + unaccounted +
                   ' cars · ' + (cs ? cs.people.carless : 0) + ' people</span>', 0]);
     rows2.push(['gulls and foxes', birds, 0]);
+    /* Which day this is: put ?seed=<this> on the address to live it again. */
+    rows2.push(['seed', RNG.seed, 0]);
     if (lost) rows2.push(['looking for their car', lost, 0]);
     if (EXC_HOT.length){
       const top = EXC_HOT[0];

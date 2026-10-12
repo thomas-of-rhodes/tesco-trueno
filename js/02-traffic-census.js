@@ -219,11 +219,11 @@ const WANDER = {
   ticketGap: 200        // between tickets once past the limit
 };
 function wanderStay(){
-  return Math.random() < WANDER.overstay
-       ? (Math.random() < 0.35
-            ? WANDER.tow + 60 + Math.random() * 400         // lost all track of time
-            : WANDER.limit + 60 + Math.random() * 500)      // lost track of time
-       : 360 + Math.random() * 720;                       // 6 to 18 minutes
+  return RND.traffic() < WANDER.overstay
+       ? (RND.traffic() < 0.35
+            ? WANDER.tow + 60 + RND.traffic() * 400         // lost all track of time
+            : WANDER.limit + 60 + RND.traffic() * 500)      // lost track of time
+       : 360 + RND.traffic() * 720;                       // 6 to 18 minutes
 }
 /* Whether somebody who has just parked goes into town rather than the shop.
    Mostly the town people, mostly in the working day. Never in the test rig. */
@@ -231,7 +231,7 @@ function wantsTown(r){
   if (CENSUS.mute || !r || (r.kind !== 'shopper' && r.kind !== 'granny')) return false;
   if (daylight() < 0.3) return false;
   const day = (TOD > 0.33 && TOD < 0.70) ? 1 : 0.35;
-  return Math.random() < (r.townish ? 0.55 : 0.04) * day;
+  return RND.traffic() < (r.townish ? 0.55 : 0.04) * day;
 }
 /* Staff shifts. The shop's own staff are off the map at 'work'; at each shift
    boundary a few of them come out to their cars and a few new ones drive in.
@@ -255,7 +255,7 @@ function staffBay(){
   const free = BAYS.filter(function(b){ return !b.car && !b.claimed && !b.leaving; });
   if (!free.length) return null;
   free.sort(function(a, b){ return a.want - b.want; });
-  return free[Math.floor(Math.random() * Math.max(1, Math.floor(free.length / 4)))];
+  return free[Math.floor(RND.traffic() * Math.max(1, Math.floor(free.length / 4)))];
 }
 /* A staff car coming in. `being` for the Manager or Trolleyboy, who exist on
    the map all along; otherwise a shop-staff resident starting a shift. */
@@ -332,9 +332,9 @@ function stepShifts(){
                r.visit.where === 'work' && !residentOnSite(r) && !r.visit.endAt;
       });
       for (let i = 0; i < SHIFTS.swap && working.length; i++){
-        const r = working.splice(Math.floor(Math.random() * working.length), 1)[0];
-        r.visit.endAt = simClockNow() + Math.random() * SHIFTS.spread;
-        SHIFTS.queue.push(simClockNow() + 15 + Math.random() * SHIFTS.spread);
+        const r = working.splice(Math.floor(RND.traffic() * working.length), 1)[0];
+        r.visit.endAt = simClockNow() + RND.traffic() * SHIFTS.spread;
+        SHIFTS.queue.push(simClockNow() + 15 + RND.traffic() * SHIFTS.spread);
       }
       CENSUS.ev.shiftWaves = (CENSUS.ev.shiftWaves || 0) + 1;
     }
@@ -456,7 +456,7 @@ function freeResident(kind){
     if (r.reserved && !r.reserved.done) continue;      // driving in right now
     free.push(r);
   }
-  return free.length ? free[Math.floor(Math.random() * free.length)] : null;
+  return free.length ? free[Math.floor(RND.traffic() * free.length)] : null;
 }
 /* `want` is a particular resident coming back into view - out of the shop
    doors, say - rather than whoever is free. */
@@ -513,7 +513,7 @@ const PAINTS = [
 function pickPaint(){
   let t = 0;
   for (const p of PAINTS) t += p[1];
-  let r = Math.random() * t;
+  let r = RND.traffic() * t;
   for (const p of PAINTS){ r -= p[1]; if (r <= 0) return p[0]; }
   return PAINTS[0][0];
 }
@@ -747,7 +747,7 @@ function comeBack(r){
   for (const e of VEH) if (e.ownerRid === r.rid && !e.fate){ veh = e; }
   const bay = veh && veh.bay && veh.bay.car && veh.bay.car.veh === veh ? veh.bay : null;
   const g = gateSpot();
-  const b = addBeing(r.kind, g[0] - 2, g[1] + (Math.random() - 0.5) * 3, r);
+  const b = addBeing(r.kind, g[0] - 2, g[1] + (RND.traffic() - 0.5) * 3, r);
   b.spawned = true;
   b.arrivedBy = 'car';
   b.fromTown = true;
@@ -771,7 +771,7 @@ function comeBack(r){
     b.parkedAt = v.bay ? bayStand(v.bay) : [g[0] + 20, g[1]];
   }
   /* A few call in for a pint of milk on the way back. */
-  b.life = Math.random() < 0.25 ? 'toDoors' : 'toCar';
+  b.life = RND.traffic() < 0.25 ? 'toDoors' : 'toCar';
   CENSUS.ev.backFromTown = (CENSUS.ev.backFromTown || 0) + 1;
 }
 /* For the console: `__census()` is the snapshot plus the running tallies. */
@@ -881,10 +881,10 @@ function trafficStep(dt){
      twelve of these arriving at once with arrivedBy 'bus'. */
   const footWant = 0.55 + 0.45 * Math.max(0, 1 - Math.abs(TOD - 0.55) * 3);
   if (daylight() > 0.12 && BEINGS.length < 70 &&
-      Math.random() < dt * 0.075 * footWant){
+      RND.traffic() < dt * 0.075 * footWant){
     const fg = gateSpot();
-    const fk = Math.random() < 0.3 ? 'granny' : 'shopper';
-    const w = addBeing(fk, fg[0] - 2, fg[1] + (Math.random() - 0.5) * 3);
+    const fk = RND.traffic() < 0.3 ? 'granny' : 'shopper';
+    const w = addBeing(fk, fg[0] - 2, fg[1] + (RND.traffic() - 0.5) * 3);
     w.spawned = true;
     w.life = 'arriving';
     w.arrivedBy = 'foot';
@@ -907,7 +907,7 @@ function pickBay(skip){
   for (const b of BAYS){
     if (b.car || b.claimed) continue;
     if (skip && skip.indexOf(b) >= 0) continue;
-    const sc = b.want * (0.55 + Math.random() * 0.9);
+    const sc = b.want * (0.55 + RND.traffic() * 0.9);
     if (sc > bs){ bs = sc; best = b; }
   }
   return best;
@@ -950,7 +950,7 @@ function temperOf(c){
   return c.model && c.model.temper !== undefined ? c.model.temper : 0.45;
 }
 function pickModel(){
-  const r = Math.random();
+  const r = RND.traffic();
   return r < 0.42 ? NPC_MODELS[0] : r < 0.74 ? NPC_MODELS[1]
        : r < 0.94 ? NPC_MODELS[2] : NPC_MODELS[3];
 }
@@ -1030,9 +1030,9 @@ function spawnArrival(){
     /* WHO is arriving, first - and they come in their own car, in its own
        paint, if they have been before. A random car with a random person
        getting out of it meant Moira turned up in a different car each time. */
-    const r = CENSUS.mute ? null : freeResident(Math.random() < 0.3 ? 'granny' : 'shopper');
+    const r = CENSUS.mute ? null : freeResident(RND.traffic() < 0.3 ? 'granny' : 'shopper');
     const model = r && r.car ? modelOf(r)
-                : (r && r.kind === 'granny' && Math.random() < 0.62) ? NPC_MODELS[0] : pickModel();
+                : (r && r.kind === 'granny' && RND.traffic() < 0.62) ? NPC_MODELS[0] : pickModel();
     const c = makeNpc(model, g[0] + 0.5, g[1], 0, 'in', null, r && r.car && r.car.paint);
     if (r){ c.resident = r; r.reserved = c; }
     bay.claimed = true;
@@ -1072,7 +1072,7 @@ function spawnDeparture(){
     const offr = offMapOwner(b);
     if (offr && (offr.visit.where === 'work' || offr.visit.where === 'town')) continue;
     /* The far end goes first in the evening, the prime row clings on. */
-    const sc = (1.6 - b.want) * (0.5 + Math.random());
+    const sc = (1.6 - b.want) * (0.5 + RND.traffic());
     if (sc > bs){ bs = sc; best = b; }
   }
   if (!best) return false;
@@ -1275,7 +1275,7 @@ function stepNpc(c, dt){
         const g = carGate();
         if (Math.hypot(g[0] - c.x, g[1] - c.y) > 12){
           if (!routeFor(c, g[0], g[1])){
-            c.wait = 2 + Math.random() * 2;
+            c.wait = 2 + RND.traffic() * 2;
             TRAF.routeWait = (TRAF.routeWait || 0) + 1;
           }
           return;
@@ -1397,7 +1397,7 @@ function stepNpc(c, dt){
                     Math.abs(angDiff(c.bay.h, c.h)) < 0.95;
     if (settled) c.settle = (c.settle || 0) + dt; else c.settle = 0;
     if (c.linedUp && (dBay < 0.9 || c.settle > 0.9)){
-      parkInBay(c.bay, c.model, Math.random, null,
+      parkInBay(c.bay, c.model, RND.traffic, null,
                 c.settle > 0.9 ? { x:c.x, y:c.y, a:c.h } : null, c.veh);
       c.bay.claimed = false;
       /* And out gets a shopper - who GOES INTO THE SHOP. Leaving that step out
@@ -1434,7 +1434,7 @@ function stepNpc(c, dt){
                     !(c.resident.visit && c.resident.visit.out === null) ? c.resident : null;
       if (c.resident) c.resident.reserved = null;
       const kind = again ? figureOf(back) : fresh ? fresh.kind
-                 : (c.model.sprite === 'jazz' && Math.random() < 0.62) ? 'granny' : 'shopper';
+                 : (c.model.sprite === 'jazz' && RND.traffic() < 0.62) ? 'granny' : 'shopper';
       const w = addBeing(kind, c.bay.x + c.bay.toAisle * 1.4, c.bay.y,
                          again ? back : fresh || undefined);
       if (again && !c.shopStaff) TRAF.reparkedOwner = (TRAF.reparkedOwner || 0) + 1;
@@ -1520,7 +1520,7 @@ function stepNpc(c, dt){
       /* No way out RIGHT NOW is not no way out: edges close while something
          stands on them. Wait in the aisle and ask again, rather than vanish. */
       if (!routeFor(c, g[0], g[1])){
-        c.state = 'out'; c.wait = 2 + Math.random() * 2;
+        c.state = 'out'; c.wait = 2 + RND.traffic() * 2;
         TRAF.routeWait = (TRAF.routeWait || 0) + 1;
         return;
       }
@@ -1861,7 +1861,7 @@ function stepNpc(c, dt){
       for (const b of BAYS){
         if (b.car || b.claimed) continue;
         if (Math.hypot(b.ax - c.x, b.ay - c.y) < 22) continue;
-        const sc = b.want * (0.6 + Math.random() * 0.8);
+        const sc = b.want * (0.6 + RND.traffic() * 0.8);
         if (sc > fs){ fs = sc; far = b; }
       }
       if (far && routeFor(c, far.ax, far.ay)){
@@ -1908,7 +1908,7 @@ function stepNpc(c, dt){
         c.state = 'go'; c.linedUp = false;
         c.fedUp = 1; c.bypasses = 1; c.replanned = 0;
         c.jammed = 0; c.blocked = 0; c.queued = 0;
-        c.wait = 12 + Math.random() * 10;
+        c.wait = 12 + RND.traffic() * 10;
         TRAF.sulked = (TRAF.sulked || 0) + 1;
         return;
       } else {
@@ -1919,7 +1919,7 @@ function stepNpc(c, dt){
            live page that stops the frame loop dead). The 'go' path-end rule
            asks for a route again when the wait is over. */
         c.state = 'go'; c.path = null; c.linedUp = false;
-        c.wait = 5 + Math.random() * 5;
+        c.wait = 5 + RND.traffic() * 5;
         c.jammed = 0; c.blocked = 0;
         TRAF.cutWait = (TRAF.cutWait || 0) + 1;
         return;
@@ -1955,21 +1955,21 @@ function stepNpc(c, dt){
         if (c.bay){ c.bay.claimed = false; c.bay.leaving = false; c.bay = null; }
         c.state = 'go'; c.linedUp = false;
         c.blocked = 0; c.queued = 0; c.jammed = 0;
-        c.wait = 12 + Math.random() * 10;
+        c.wait = 12 + RND.traffic() * 10;
         TRAF.sulked = (TRAF.sulked || 0) + 1;
         return;
       }
     }
     if (c.bay && (c.state === 'out' || c.state === 'go')){
       /* A departure still beside its own space: back into it and try later. */
-      parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
+      parkInBay(c.bay, c.model, RND.traffic, null, null, c.veh);
       c.bay.claimed = false; c.bay.leaving = false;
       c.done = true;
       TRAF.gaveUp = (TRAF.gaveUp || 0) + 1;
       return;
     }
     /* Nowhere to put it and no way out just now: wait, never vanish. */
-    c.wait = 5 + Math.random() * 5;
+    c.wait = 5 + RND.traffic() * 5;
     c.blocked = 0; c.jammed = 0;
     TRAF.cutWait = (TRAF.cutWait || 0) + 1;
     return;
@@ -2115,7 +2115,7 @@ function stepNpcRoll(c, dt){
         if (c.fromBay && bay !== c.fromBay){
           c.fromBay.claimed = false; c.fromBay.leaving = false;
         }
-        parkInBay(bay, c.model, Math.random, null, { x:c.x, y:c.y, a:c.h }, c.veh);
+        parkInBay(bay, c.model, RND.traffic, null, { x:c.x, y:c.y, a:c.h }, c.veh);
         bay.claimed = false;
         bay.ownerCid = c.ownerCid || null;    // still hers, wherever it now is
       }
@@ -2158,7 +2158,7 @@ function stepCars(dt){
          the middle of an aisle - which is precisely the popping this whole
          system exists to abolish. */
       if (c.bay){
-        if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
+        if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, RND.traffic, null, null, c.veh);
         c.bay.claimed = false; c.bay.leaving = false;
       }
       c.done = true;

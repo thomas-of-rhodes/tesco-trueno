@@ -82,11 +82,11 @@ function stepLamps(dt){
           /* Into a dip: a couple of seconds to seven, down to between a fifth
              and two thirds. Not off - a lamp that cut out completely would be a
              different and much more dramatic fault. */
-          L.dipWant = 0.2 + Math.random() * 0.45;
-          L.dipT = 1.5 + Math.random() * 6;
+          L.dipWant = 0.2 + RND.scenery() * 0.45;
+          L.dipT = 1.5 + RND.scenery() * 6;
         } else {
           L.dipWant = 1;
-          L.dipT = 25 + Math.random() * 150;
+          L.dipT = 25 + RND.scenery() * 150;
         }
       }
       L.dip += (L.dipWant - L.dip) * Math.min(1, dt * 1.3);
@@ -228,8 +228,8 @@ function startSwim(o, kind, vx, vy){
   const p = SWIM[kind];
   o.swim = kind; o.wetT = 0; o.depth = 0; o.sinkV = 0; o.vis = 1;
   o.abyss = o.abyss || 1e-3;                 // committed: no picking it back out
-  o.bobPh = Math.random() * 6.28;
-  o.floatT = p.float[0] + Math.random() * (p.float[1] - p.float[0]);
+  o.bobPh = RND.scenery() * 6.28;
+  o.floatT = p.float[0] + RND.scenery() * (p.float[1] - p.float[0]);
   o.wvx = (vx || 0) * 0.25; o.wvy = (vy || 0) * 0.25;   // the splash kills the throw
   o.ripT = 0.5;
   o.swimZ = 0;
@@ -254,8 +254,8 @@ function swimStep(o, dt){
     else {
       o.sinkV = Math.min(1.1, o.sinkV + p.sink * dt);
       o.depth += o.sinkV * dt;
-      if (Math.random() < dt * 5)                     // bubbles
-        ripple(o.x + (Math.random() - 0.5) * 1.2, o.y + (Math.random() - 0.5) * 1.2,
+      if (RND.scenery() < dt * 5)                     // bubbles
+        ripple(o.x + (RND.scenery() - 0.5) * 1.2, o.y + (RND.scenery() - 0.5) * 1.2,
                0.45, 0.7, 0.6, false);
     }
     o.vis = Math.max(0, Math.min(1, 1 - (o.depth - p.ride) / (p.deep - p.ride)));
@@ -274,7 +274,7 @@ function swimStep(o, dt){
   /* A ring now and then while it is on the surface. */
   o.ripT -= dt;
   if (o.ripT <= 0 && o.depth < p.ride + 0.5 && o.depth > -0.3){
-    o.ripT = 0.8 + Math.random() * 0.5;
+    o.ripT = 0.8 + RND.scenery() * 0.5;
     ripple(o.x, o.y, o.swim === 'car' ? 3.2 : 1.4, 1.5, 0.35, false);
   }
   o.swimZ = -(o.depth + (o.depth > -0.3 ? bob : 0));
@@ -308,8 +308,8 @@ function consignBeing(b, how){
   if (b.kind === 'gull' || b.kind === 'fox'){
     /* Wildlife: off the premises for a while, then back the usual way. */
     b.away = true;
-    b.voidT = how === 'tay' && b.kind === 'gull' ? 8 + Math.random() * 8
-                                                 : 30 + Math.random() * 30;
+    b.voidT = how === 'tay' && b.kind === 'gull' ? 8 + RND.scenery() * 8
+                                                 : 30 + RND.scenery() * 30;
   } else {
     /* Staff: back in the shop, and out of the doors again in a little while as
        if nothing happened. Put AT the doors now, because the radio can call
@@ -317,7 +317,7 @@ function consignBeing(b, how){
     const dr = nearestPlace(PLACES.doors, X1 - 20, ROWY[0]);
     b.x = dr[0]; b.y = dr[1] + 1.2;
     b.inStore = true;
-    b.hold = 25 + Math.random() * 25;
+    b.hold = 25 + RND.scenery() * 25;
   }
 }
 /* The fall itself, for a being. Kept out of stepBeing because that clamps
@@ -352,8 +352,8 @@ function beingFall(b, dt){
 function consignTrolley(m){
   VOID.trolleys++;
   for (const b of BEINGS) if (b.carry === m) b.carry = null;
-  const sh = SHELTERS[Math.floor(Math.random() * SHELTERS.length)];
-  m.x = sh[0]; m.y = sh[1] - 2 + Math.floor(Math.random() * 4) * 1.1; m.h = Math.PI / 2;
+  const sh = SHELTERS[Math.floor(RND.scenery() * SHELTERS.length)];
+  m.x = sh[0]; m.y = sh[1] - 2 + Math.floor(RND.scenery() * 4) * 1.1; m.h = Math.PI / 2;
   m.z = 0; m.vz = 0; m.vx = 0; m.vy = 0; m.r = 0; m.abyss = 0;
   clearSwim(m);
   syncBox(m);

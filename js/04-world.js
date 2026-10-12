@@ -232,7 +232,7 @@ let withLorry = true;
    it the slightly-wrong placement people actually manage. */
 function parkInBay(bay, model, rnd, w, at, veh){
   const world = w || WORLD;
-  const r = rnd || Math.random;
+  const r = rnd || RND.world;      /* seeded: a parked car's wonk is part of the day */
   /* Sloppiness scales with how little the driver cares. A Jazz is askew about a
      third of the time and by a fair margin; the A4 is within a few centimetres
      of straight almost always. */
@@ -604,8 +604,8 @@ function stepLorry(w, dt){
          thirty metres to work with and walks it in; one who stops short, or ends
          up tight against the fence, has to take two bites at it. Randomising this
          rather than randomising the outcome means the retries are earned. */
-      LORRY.setY = LANE_Y - 3.0 + Math.random() * 3.4;
-      LORRY.setX = X1 - 13 - Math.random() * 13;
+      LORRY.setY = LANE_Y - 3.0 + RND.world() * 3.4;
+      LORRY.setX = X1 - 13 - RND.world() * 13;
       LORRY.x = X1 + 26; LORRY.y = LANE_Y;
       LORRY.h = Math.PI; LORRY.ht = Math.PI; LORRY.v = 0; LORRY.steer = 0;
     }
@@ -638,7 +638,7 @@ function stepLorry(w, dt){
     } else if (Math.hypot(axle[0] - DOCK.x, axle[1] - DOCK.y) < 1.1 &&
                Math.abs(angDiff(DOCK.h, LORRY.ht)) < 0.14){
       LORRY.phase = 'dock'; LORRY.t = 0;
-      LORRY.wait = 70 + Math.random() * 150;
+      LORRY.wait = 70 + RND.world() * 150;
     } else if (Math.abs(angDiff(DOCK.h, LORRY.ht)) > 1.0 ||
                (DOCK.x - axle[0]) * Math.cos(DOCK.h + Math.PI) +
                (DOCK.y - axle[1]) * Math.sin(DOCK.h + Math.PI) < -2.5 ||

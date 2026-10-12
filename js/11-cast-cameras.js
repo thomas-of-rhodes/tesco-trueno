@@ -1045,10 +1045,10 @@ function stepBus(w, dt){
     /* Roughly every two simulated hours while the shop is open, which at this
        clock is a bus every hundred seconds or so - often enough to be a feature
        of the day and rare enough to be an event. */
-    if (BUS.t > 90 + Math.random() * 70 && daylight() > 0.1){
+    if (BUS.t > 90 + RND.beings() * 70 && daylight() > 0.1){
       BUS.on = true; BUS.phase = 'in'; BUS.t = 0;
       BUS.x = X0 - 58; BUS.y = st.y; BUS.h = 0; BUS.v = 0; BUS.steer = 0;
-      BUS.out = 3 + Math.floor(Math.random() * 6);
+      BUS.out = 3 + Math.floor(RND.beings() * 6);
       BUS.stopped = 0;
     }
     syncBus(w);
@@ -1060,7 +1060,7 @@ function stepBus(w, dt){
     vWant = Math.min(7.0, 0.9 * Math.max(0, st.x - BUS.x) + 0.6);
     const want = angDiff(Math.atan2(st.y - BUS.y, (st.x + 6) - BUS.x), BUS.h);
     BUS.steer = Math.max(-0.4, Math.min(0.4, want * 1.3));
-    if (BUS.x > st.x - 0.6){ BUS.phase = 'dwell'; BUS.t = 0; BUS.wait = 16 + Math.random() * 20; }
+    if (BUS.x > st.x - 0.6){ BUS.phase = 'dwell'; BUS.t = 0; BUS.wait = 16 + RND.beings() * 20; }
   } else if (BUS.phase === 'dwell'){
     vWant = 0; BUS.steer = 0;
     BUS.wait -= dt;
@@ -1069,7 +1069,7 @@ function stepBus(w, dt){
     if (BUS.out > 0 && BUS.stopped > 1.2){
       BUS.stopped = 0; BUS.out--;
       const d = busDoor();
-      const kind = Math.random() < 0.28 ? 'granny' : 'shopper';
+      const kind = RND.beings() < 0.28 ? 'granny' : 'shopper';
       const b = addBeing(kind, d[0], d[1]);
       b.spawned = true;
       b.life = 'arriving';
@@ -1206,14 +1206,14 @@ function addBeing(kind, x, y, who){
   let pool = sp ? sp.order.filter(function(n){ return POSES.indexOf(n) < 0; }) : [];
   if (!pool.length && sp) pool = sp.order;
   /* A resident keeps their look from visit to visit: Moira in her coat. */
-  let look = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  let look = pool.length ? pool[Math.floor(RND.beings() * pool.length)] : null;
   if (who && who.look && pool.indexOf(who.look) >= 0) look = who.look;
-  const b = { kind:kind, k:k, x:x, y:y, h:Math.random() * 6.28, z:0, vz:0,
+  const b = { kind:kind, k:k, x:x, y:y, h:RND.beings() * 6.28, z:0, vz:0,
               look:look, state:look, home:[x, y], leg:false,
               away:false, leaving:false, arriving:false,
               ownBay:null, toCar:null, spawned:false, gone:false,
               gz:0, flap:0,
-              jitter:(Math.random() - 0.5) * 0.10,
+              jitter:(RND.beings() - 0.5) * 0.10,
               /* `anim` is the walk cycle - the bob, the gull's dawdle. It used to
                  be called `phase`, and `phase` was ALSO the name of the shopper
                  state machine, and the object literal below declared `phase`
@@ -1223,7 +1223,7 @@ function addBeing(kind, x, y, who){
                  because those branches happened to `continue` before `phase += dt`
                  turned 'toDoors' into "toDoors0.00833". Two meanings, one name,
                  and a duplicate key holding it together. */
-              anim:Math.random() * 6.28,
+              anim:RND.beings() * 6.28,
               /* And the life. One state machine for the whole span of a visit:
                    arriving -> toDoors -> inStore -> outDoors
                              -> toCar | toExit -> gone

@@ -363,6 +363,37 @@ function drawThought(){
   g2.restore();
 }
 
+/* ONE step of the simulation, DT long. The page calls it from the frame loop
+   and a harness or a background worker can call it directly; it does not
+   touch the screen. SIM_TICK counts steps for the whole run: Trueno decides on
+   every fourth STEP, which used to be every fourth step within a FRAME - so
+   when he decided depended on how many steps a frame happened to hold, i.e.
+   on the frame rate, and no two machines (or two loads) had the same day. */
+let SIM_TICK = 0;
+function simStep(){
+  /* A held or airborne car is out of the driving model entirely: no perception,
+     no tyres, no contacts. It comes back the instant it lands. */
+  /* Driven off the edge of the world, which manual driving can do. */
+  if (!car.held && !car.airborne && inVoid(car.x, car.y)){ car.airborne = -1e-3; car.vzz = 0; }
+  const grounded = !car.held && !car.airborne;
+  if (auto && grounded && (SIM_TICK % 4) === 0) drive(car, CTL);
+  if (grounded){
+    stepPhysics(car, CTL, DT); collide(car); collideMovers(car); collidePeople(car);
+  } else {
+    stepCarFall(DT);
+  }
+  stepMovers(DT); stepBeings(DT); stepWeather(DT); washRubber(DT); stepRain(DT);
+  trafficStep(DT); stepCars(DT); stepCensus(DT);
+  /* The same multiplier the clock itself gets. A lamp takes five minutes of
+     ITS day to come up, so running the day at twenty times should not leave
+     every lamp stuck at a quarter brightness all night. */
+  stepLamps(DT * (typeof fastDay !== 'undefined' && fastDay ? 20 : 1));
+  simClock += DT; stampVisit(car.x, car.y); stepLorry(WORLD, DT);
+  stepBus(WORLD, DT); stepExcite(DT);
+  if (trace && !car.held && !car.airborne) layRubber(car);
+  SIM_TICK++;
+}
+
 let excT = 0;
 function frame(t){
   if (!last) last = t;
@@ -384,30 +415,8 @@ function frame(t){
   readInput();
   acc += dtr;
   stepHand(dtr);
-  let n = 0;
-  while (acc >= DT){
-    /* A held or airborne car is out of the driving model entirely: no perception,
-       no tyres, no contacts. It comes back the instant it lands. */
-    /* Driven off the edge of the world, which manual driving can do. */
-    if (!car.held && !car.airborne && inVoid(car.x, car.y)){ car.airborne = -1e-3; car.vzz = 0; }
-    const grounded = !car.held && !car.airborne;
-    if (auto && grounded && (n % 4) === 0) drive(car, CTL);
-    if (grounded){
-      stepPhysics(car, CTL, DT); collide(car); collideMovers(car); collidePeople(car);
-    } else {
-      stepCarFall(DT);
-    }
-    stepMovers(DT); stepBeings(DT); stepWeather(DT); washRubber(DT); stepRain(DT);
-    trafficStep(DT); stepCars(DT); stepCensus(DT);
-    /* The same multiplier the clock itself gets. A lamp takes five minutes of
-       ITS day to come up, so running the day at twenty times should not leave
-       every lamp stuck at a quarter brightness all night. */
-    stepLamps(DT * (typeof fastDay !== 'undefined' && fastDay ? 20 : 1));
-    simClock += DT; stampVisit(car.x, car.y); stepLorry(WORLD, DT);
-    stepBus(WORLD, DT); stepExcite(DT);
-    if (trace && !car.held && !car.airborne) layRubber(car);
-    acc -= DT; n++;
-  }
+  /* Fixed steps, however the frames fall. */
+  while (acc >= DT){ simStep(); acc -= DT; }
   /* Four times a second is plenty for the peaks - they are a reading of a field
      with a six second half-life, so recomputing them every frame would just be
      the same answer a hundred and twenty times. */
@@ -536,7 +545,7 @@ $('bRain').onclick = function(){
     /* And one already on its way across the river: here in about ten seconds. */
     SQ.ws = Math.max(SQ.ws, 7); spawnCell(150); SQ.cellT = 60;
   }
-  else { WX.spell = 0; WX.rain = 0; WX.next = 400 + Math.random() * 600; }
+  else { WX.spell = 0; WX.rain = 0; WX.next = 400 + RND.weather() * 600; }
 };
 $('bGod').onclick = function(){
   HAND.on = !HAND.on; this.classList.toggle('on', HAND.on);

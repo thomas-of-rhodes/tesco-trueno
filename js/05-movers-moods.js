@@ -18,11 +18,11 @@ const GRAV = 9.81;
 
 function makeTrolley(x, y, h){
   const t = { kind:'trolley', x:x, y:y, h:h || 0, vx:0, vy:0, r:0,
-              z:0, vz:0, held:false, flail:Math.random() * 6.28,
+              z:0, vz:0, held:false, flail:RND.movers() * 6.28,
               mass:25, hl:0.53, hw:0.31, rolled:0,
               /* Every trolley has one castor with a mind of its own. This is the
                  whole personality of the object and it is one number. */
-              wonk:(Math.random() - 0.5) * 0.9,
+              wonk:(RND.movers() - 0.5) * 0.9,
               box:{ x:x, y:y, hl:0.53, hw:0.31, a:h || 0, c:1, s:0, kind:'trolley' } };
   syncBox(t);
   return t;
@@ -286,7 +286,7 @@ function npcShunt(c){
     m.x += nx * depth; m.y += ny * depth;
     const push = Math.min(2.2, Math.abs(c.spd) * 0.7);
     m.vx += nx * push; m.vy += ny * push;
-    m.r += (Math.random() - 0.5) * 1.2;
+    m.r += (RND.movers() - 0.5) * 1.2;
     syncBox(m);
   }
 }
@@ -351,7 +351,7 @@ function stepMover(m, dt){
       const slam = -m.vz;
       m.vz = 0;
       m.vx *= 0.55; m.vy *= 0.55;
-      m.r += (Math.random() - 0.5) * slam * 0.6;
+      m.r += (RND.movers() - 0.5) * slam * 0.6;
       m.rolled += slam;
     }
     syncBox(m);
@@ -415,8 +415,8 @@ function moversTouch(){
         const jimp = -0.7 * rel;
         a.vx -= nx * jimp; a.vy -= ny * jimp;
         b.vx += nx * jimp; b.vy += ny * jimp;
-        a.r += (Math.random() - 0.5) * jimp * 0.5;
-        b.r += (Math.random() - 0.5) * jimp * 0.5;
+        a.r += (RND.movers() - 0.5) * jimp * 0.5;
+        b.r += (RND.movers() - 0.5) * jimp * 0.5;
       }
       syncBox(a); syncBox(b);
     }
@@ -473,7 +473,7 @@ function collideMovers(c){
     const MT = m.mass;
     const jimp = (1 + 0.28) * rel / (1 / M + 1 / MT);
     m.vx += (jimp / MT) * nx; m.vy += (jimp / MT) * ny;
-    m.r += (Math.random() - 0.5) * rel * 1.4;        // it slews as it goes
+    m.r += (RND.movers() - 0.5) * rel * 1.4;        // it slews as it goes
     m.vz = Math.min(2.4, rel * 0.16);                // and gets a bit of air
     m.struck = true;
 
@@ -746,8 +746,8 @@ function stepMovers(dt){
 function washRubber(dt){
   if (WX.rain < 0.15 || !RUB.length) return;
   const n = Math.min(RUB.length, Math.floor(RUB.length * WX.rain * 0.10 * dt) +
-                     (Math.random() < RUB.length * WX.rain * 0.10 * dt ? 1 : 0));
-  for (let i = 0; i < n; i++) RUB.splice(Math.floor(Math.random() * RUB.length), 1);
+                     (RND.movers() < RUB.length * WX.rain * 0.10 * dt ? 1 : 0));
+  for (let i = 0; i < n; i++) RUB.splice(Math.floor(RND.movers() * RUB.length), 1);
 }
 
 /* Strays, where strays actually end up: abandoned mid-bay by someone in a hurry,

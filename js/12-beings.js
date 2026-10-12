@@ -226,13 +226,13 @@ function nearestPlace(list, x, y){
   return best || [x, y];
 }
 function pickPlace(list){
-  return list.length ? list[Math.floor(Math.random() * list.length)] : null;
+  return list.length ? list[Math.floor(RND.beings() * list.length)] : null;
 }
 function goTo(b, q, jitter){
   if (!q) return;
   const j = jitter === undefined ? 2.5 : jitter;
-  b.tx = q[0] + (Math.random() - 0.5) * j;
-  b.ty = q[1] + (Math.random() - 0.5) * j;
+  b.tx = q[0] + (RND.beings() - 0.5) * j;
+  b.ty = q[1] + (RND.beings() - 0.5) * j;
 }
 function wanderTarget(b, pad){
   /* Shoppers and grannies alternate between the doors and where they parked,
@@ -413,8 +413,8 @@ const BEHAVE = {
 
       b.whimT = (b.whimT || 0) - dt;
       if (b.whimT <= 0){
-        b.whimT = 1.1 + Math.random() * 2.4;
-        b.whim = (Math.random() - 0.5) * 1.15;
+        b.whimT = 1.1 + RND.beings() * 2.4;
+        b.whim = (RND.beings() - 0.5) * 1.15;
       }
 
       /* What it sees. Rubber on the tarmac is food and worth a look; Trueno is
@@ -469,7 +469,7 @@ const BEHAVE = {
         if (d < bd){ bd = d; bi = i; }
       }
       if (bi >= 0 && RUB[bi]){ b.tx = RUB[bi][0]; b.ty = RUB[bi][1]; b.rubI = bi; }
-      else if (Math.random() < 0.3) wanderTarget(b, 6);
+      else if (RND.beings() < 0.3) wanderTarget(b, 6);
     }
     const there = walkTo(b, dt, b.k.speed * (0.5 + 0.5 * Math.sin(b.anim * 3) ** 2));
     if (there){
@@ -477,7 +477,7 @@ const BEHAVE = {
       if (b.rubI !== undefined && b.rubI < RUB.length){
         RUB.splice(b.rubI, 1); b.rubI = undefined; b.fed++;   // pecked up
       }
-      if (Math.random() < 0.02) wanderTarget(b, 6);
+      if (RND.beings() < 0.02) wanderTarget(b, 6);
     } else b.state = poseOr(b, 'loaf');
   },
 
@@ -495,7 +495,7 @@ const BEHAVE = {
     }
     if (b.hold > 0){ b.hold -= dt; b.state = poseOr(b, 'sniff'); return; }
     if (walkTo(b, dt, b.k.speed)){
-      b.state = poseOr(b, 'sniff'); b.hold = 1.5 + Math.random() * 3;
+      b.state = poseOr(b, 'sniff'); b.hold = 1.5 + RND.beings() * 3;
       wanderTarget(b, 5);
     } else b.state = poseOr(b, Math.sin(b.anim * 2) > 0.9 ? 'alert' : 'trot');
   },
@@ -507,7 +507,7 @@ const BEHAVE = {
     const other = beingNear(b, ['granny'], 6.5);
     if (other && !other.chatted && !b.chatted){
       b.chatted = other.chatted = true;
-      b.hold = other.hold = 14 + Math.random() * 16;      // the weather
+      b.hold = other.hold = 14 + RND.beings() * 16;      // the weather
       b.state = b.look; other.state = other.look;
       b.h = Math.atan2(other.y - b.y, other.x - b.x);
       other.h = b.h + Math.PI;
@@ -518,9 +518,9 @@ const BEHAVE = {
        on her way over. This is the congregation mechanism: without a little
        attraction, five of them in a 176 m car park essentially never meet. */
     const far = beingNear(b, ['granny'], 40);
-    if (far && !b.chatted && Math.random() < 0.02){ b.tx = far.x; b.ty = far.y; }
+    if (far && !b.chatted && RND.beings() < 0.02){ b.tx = far.x; b.ty = far.y; }
     if (walkTo(b, dt, b.k.speed)){
-      b.hold = 3 + Math.random() * 8;
+      b.hold = 3 + RND.beings() * 8;
       wanderTarget(b, 8);
     } else b.state = b.look;
   },
@@ -608,7 +608,7 @@ const BEHAVE = {
       const d = Math.hypot(m.x - b.x, m.y - b.y);
       if (d < bd){ bd = d; best = m; }
     }
-    if (!best){ b.hold = 8 + Math.random() * 14; b.state = poseOr(b, 'smoking'); return; }
+    if (!best){ b.hold = 8 + RND.beings() * 14; b.state = poseOr(b, 'smoking'); return; }
     b.tx = best.x; b.ty = best.y;
     if (walkTo(b, dt, b.k.speed)){ b.carry = best; best.held = true; }
     else b.state = b.look;
@@ -650,14 +650,14 @@ const BEHAVE = {
        clock. */
     b.shift = (b.shift || 0) + dt;
     b.grudge = Math.max(0, (b.grudge || 0) - dt);
-    if (b.shift > 55 + Math.random() * 40){
+    if (b.shift > 55 + RND.beings() * 40){
       /* He goes in through the DOORS, like a person. Vanishing from the middle
          of the car park was the only popping left in here once the shifts
          started using the entrance. */
       const dr = nearestPlace(PLACES.doors, b.x, b.y);
       b.tx = dr[0]; b.ty = dr[1]; b.state = b.look;
       if (walkTo(b, dt, b.k.speed * 1.2)){
-        b.shift = 0; b.inStore = true; b.hold = 14 + Math.random() * 26;
+        b.shift = 0; b.inStore = true; b.hold = 14 + RND.beings() * 26;
       }
       return;
     }
@@ -667,21 +667,21 @@ const BEHAVE = {
       b.state = b.look;
       if (walkTo(b, dt, b.k.speed * 1.5)){
         gull.vz = 4.0; gull.state = poseOr(gull, 'wings-out'); gull.hold = 2.5;
-        b.grudge = 7 + Math.random() * 9;     // briefly satisfied
+        b.grudge = 7 + RND.beings() * 9;     // briefly satisfied
       }
       return;
     }
     if (walkTo(b, dt, b.k.speed)){
-      if (Math.random() < 0.35 &&
+      if (RND.beings() < 0.35 &&
           Math.hypot(b.x - nearestPlace(PLACES.doors, b.x, b.y)[0],
                      b.y - nearestPlace(PLACES.doors, b.x, b.y)[1]) < 6){
-        b.inStore = true; b.hold = 12 + Math.random() * 30;   // in at the doors
+        b.inStore = true; b.hold = 12 + RND.beings() * 30;   // in at the doors
       } else {
-        b.hold = 2 + Math.random() * 5;
+        b.hold = 2 + RND.beings() * 5;
         /* He does not roam. He works the frontage and the pens, which is where
            the gulls and the trolleys are, and therefore where the grievances
            are. */
-        goTo(b, Math.random() < 0.5 ? pickPlace(PLACES.doors)
+        goTo(b, RND.beings() < 0.5 ? pickPlace(PLACES.doors)
                                     : pickPlace(PLACES.pens), 6);
       }
     } else b.state = b.look;
@@ -769,7 +769,7 @@ function stepBeings(dt){
   if (TOD < was){
     /* A new day. Re-roll everybody, so today is not yesterday. */
     DAY_N++;
-    for (const b of BEINGS) b.jitter = (Math.random() - 0.5) * 0.10;
+    for (const b of BEINGS) b.jitter = (RND.beings() - 0.5) * 0.10;
   }
   for (const b of BEINGS){
     if (b.abyss || (!b.held && b.z > 0 && (inVoid(b.x, b.y) || inTay(b.x, b.y)))){
@@ -814,7 +814,7 @@ function stepBeings(dt){
         if (atDoor){
           b.inStore = true;
           /* A Tesco shop is a few minutes to the best part of an hour. */
-          b.shopT = 90 + Math.random() * 900;
+          b.shopT = 90 + RND.beings() * 900;
           b.life = 'inStore';
         }
         continue;
@@ -834,7 +834,7 @@ function stepBeings(dt){
            goes home on it - the car entirely forgotten. It becomes one of the
            abandoned, and gets the tickets and the truck in due course. */
         if (b.life === 'toCar' && b.kind === 'granny' && !CENSUS.mute &&
-            Math.random() < GRANNY_FORGET){
+            RND.beings() < GRANNY_FORGET){
           b.life = 'toExit'; b.forgot = true;
           CENSUS.ev.forgot = (CENSUS.ev.forgot || 0) + 1;
           censusNote('forgot her car', b.name);
@@ -875,7 +875,7 @@ function stepBeings(dt){
                leaving, walk out of the car park - and a shrug is the one reaction
                nobody actually has. */
             b.life = 'muddled';
-            b.muddleT = 3 + Math.random() * 3.5;
+            b.muddleT = 3 + RND.beings() * 3.5;
             b.ownBay = null;
           }
         }
@@ -896,7 +896,7 @@ function stepBeings(dt){
         }
         if (b.muddleT <= 0){
           b.life = 'hunting';
-          b.huntT = 60 + Math.random() * 40;
+          b.huntT = 60 + RND.beings() * 40;
           b.huntRing = 0;
           b.huntPicked = false;
         }
@@ -914,8 +914,8 @@ function stepBeings(dt){
         if (!b.huntPicked){
           b.huntPicked = true;
           b.huntRing = 1;
-          b.tx = b.x + (Math.random() - 0.5) * 14;
-          b.ty = b.y + (Math.random() - 0.5) * 10;
+          b.tx = b.x + (RND.beings() - 0.5) * 14;
+          b.ty = b.y + (RND.beings() - 0.5) * 10;
           continue;
         }
         if (walkTo(b, dt, b.k.speed * 1.15)){
@@ -950,7 +950,7 @@ function stepBeings(dt){
             if (!bx) continue;
             const d = Math.hypot(bx.x - b.x, bx.y - b.y);
             if (d < 3.5 || d > rad) continue;
-            const sc = d + Math.random() * 12;
+            const sc = d + RND.beings() * 12;
             if (sc < bd){ bd = sc; best = bx; }
           }
           if (best){ b.tx = best.x; b.ty = best.y; }
@@ -1063,7 +1063,7 @@ function stepBeings(dt){
       /* Off the premises. Comes back in when its hours start again. */
       if (b.carComing && b.carComing.done) b.carComing = null;
       if (b.carComing) continue;                  // on the way in, in the car
-      if (want && Math.random() < dt * 0.35){
+      if (want && RND.beings() < dt * 0.35){
         /* The Manager and Trolleyboy DRIVE in now, and park out of the way.
            Walking in from the gate stays as the fallback if no car can get in
            for a couple of minutes, and in the test rig. */
@@ -1075,7 +1075,7 @@ function stepBeings(dt){
           continue;
         }
         b.away = false; b.leaving = false; b.arriving = true;
-        b.x = g[0] - 3; b.y = g[1] + (Math.random() - 0.5) * 3;
+        b.x = g[0] - 3; b.y = g[1] + (RND.beings() - 0.5) * 3;
         b.hold = 0; b.carry = null;
         goTo(b, b.home || pickPlace(PLACES.park), 4);
       }
@@ -1099,8 +1099,8 @@ function stepBeings(dt){
     /* A granny may decide to go BEFORE her hours are up - that is the whole
        behaviour. Everyone else waits to be told. */
     const early = b.kind === 'granny' && TOD > 0.56 && !b.leaving &&
-                  Math.random() < dt * urge * 0.55;
-    if ((!want || early) && !b.leaving && Math.random() < dt * urge || early){
+                  RND.beings() < dt * urge * 0.55;
+    if ((!want || early) && !b.leaving && RND.beings() < dt * urge || early){
       /* Time to go. Not all at once - this fires independently per being. */
       b.leaving = true; b.hold = 0;
       if (b.carry){ b.carry.held = false; b.carry = null; }
@@ -1316,15 +1316,15 @@ function seedOwners(){
     if (ownerOfBay(bay) || offMapOwner(bay)) continue;
     const jazz = bay.car.model && bay.car.model.sprite === 'jazz';
     const kind = bay.longStay ? 'staff'
-               : (jazz && Math.random() < 0.62) ? 'granny' : 'shopper';
+               : (jazz && RND.beings() < 0.62) ? 'granny' : 'shopper';
     const r = freeResident(kind);
     if (!r) continue;
     /* Some of the cars that are here before you are are town cars: their
        owners are part way through a trip in, with the rest of it to come. */
-    const town = !bay.longStay && Math.random() < (r.townish ? 0.6 : 0.08);
+    const town = !bay.longStay && RND.beings() < (r.townish ? 0.6 : 0.08);
     openVisit(r, bay.longStay ? 'work' : 'shop', 'car', bay);
     if (town){
-      const stay = wanderStay(), done = Math.random() * stay * 0.8;
+      const stay = wanderStay(), done = RND.beings() * stay * 0.8;
       r.visit.where = 'town'; r.visit.left = -done; r.visit.due = stay - done; r.visit.over = false;
     }
     bay.car.veh.ownerRid = r.rid;

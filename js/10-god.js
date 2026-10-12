@@ -192,7 +192,7 @@ function grab(obj){
        he is not still trying to accelerate while dangling. */
     CTL.thr = CTL.brk = CTL.hb = CTL.rev = 0; CTL.steer = 0;
     car.vx = 0; car.vy = 0; car.r = 0;
-    car.lift = 0; car.flail = Math.random() * 6.28;
+    car.lift = 0; car.flail = RND.god() * 6.28;
   }
 }
 
@@ -207,13 +207,13 @@ function release(){
   const cap = sp > 26 ? 26 / sp : 1;
   o.vx = HAND.vx * cap; o.vy = HAND.vy * cap;
   o.vz = 0;
-  o.r = (o.r || 0) + (Math.random() - 0.5) * 3.5;
+  o.r = (o.r || 0) + (RND.god() - 0.5) * 3.5;
   /* Dropped people land badly and need a moment, which is both funnier and more
      plausible than a granny touching down mid-stride. The fall itself is the
      airborne branch of stepBeing, which beings already had for the gulls. */
   if (o.k && o !== car){
     o.z = o.lift || 0; o.vz = 0;
-    o.down = 1.6 + Math.random() * 2.2;
+    o.down = 1.6 + RND.god() * 2.2;
     o.lift = 0;
   }
   /* An NPC car has no vertical physics - the driving model is deliberately 2D -
@@ -352,6 +352,6 @@ function stepCarFall(dt){
   }
   if (car.airborne <= 0){
     car.airborne = 0; car.vzz = 0;
-    car.r += (Math.random() - 0.5) * 1.2;      // lands askew
+    car.r += (RND.god() - 0.5) * 1.2;      // lands askew
   }
 }

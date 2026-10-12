@@ -20,16 +20,16 @@
    WET is surface wetness rather than rainfall: it lags the rain going on and
    takes a good while to dry afterwards, so the interesting part - a drying
    car park with grip coming back unevenly in time - happens on its own. */
-const WX = { rain:0, wet:0, next:120 + Math.random() * 400, spell:0 };
+const WX = { rain:0, wet:0, next:120 + RND.weather() * 400, spell:0 };
 function stepWeather(dt){
   WX.next -= dt;
   if (WX.spell > 0){
     WX.spell -= dt;
     WX.rain = Math.min(1, WX.rain + dt * 0.5);
-    if (WX.spell <= 0) WX.next = 200 + Math.random() * 700;
+    if (WX.spell <= 0) WX.next = 200 + RND.weather() * 700;
   } else {
     WX.rain = Math.max(0, WX.rain - dt * 0.25);
-    if (WX.next <= 0) WX.spell = 60 + Math.random() * 260;
+    if (WX.next <= 0) WX.spell = 60 + RND.weather() * 260;
   }
   /* Squalls run on top of the spell - but only in the live sim. Anything that
      pins the wetness (the test rigs) gets the plain spell and nothing else. */
@@ -88,35 +88,35 @@ let AQUA = 0;
 const RAIN = { soaked:0, brollies:0, puddleHits:0, cells:0 };
 function spawnCell(dist){
   const ux = Math.cos(SQ.wa), uy = Math.sin(SQ.wa);
-  const across = (Math.random() - 0.5) * 80;
+  const across = (RND.weather() - 0.5) * 80;
   /* Slower and deeper than the first go, which crossed in eight seconds and
      read as a flicker: heavy rain for fifteen to twenty, and coming and going
      for half a minute either side. */
-  const v = 3 + SQ.ws * 0.45 + Math.random() * 1.5;
+  const v = 3 + SQ.ws * 0.45 + RND.weather() * 1.5;
   SQ.cells.push({ x:SITE_C[0] - ux * dist - uy * across,
                   y:SITE_C[1] - uy * dist + ux * across,
                   ux:ux, uy:uy, v:v,
-                  a:65 + Math.random() * 30,        // half-depth along the wind
-                  w:65 + Math.random() * 45,        // half-width across it
-                  k:0.75 + Math.random() * 0.25,
+                  a:65 + RND.weather() * 30,        // half-depth along the wind
+                  w:65 + RND.weather() * 45,        // half-width across it
+                  k:0.75 + RND.weather() * 0.25,
                   age:0, life:(dist * 2) / v });
   RAIN.cells++;
 }
 function stepSqualls(dt){
   /* The wind veers about the south-west rather than holding a compass line. */
   SQ.waT -= dt;
-  if (SQ.waT <= 0){ SQ.waT = 20 + Math.random() * 40; SQ.waWant = 0.45 + (Math.random() - 0.5) * 1.1; }
+  if (SQ.waT <= 0){ SQ.waT = 20 + RND.weather() * 40; SQ.waWant = 0.45 + (RND.weather() - 0.5) * 1.1; }
   SQ.wa += angDiff(SQ.waWant, SQ.wa) * Math.min(1, dt * 0.05);
   const here = squallAt(SITE_C[0], SITE_C[1]);
   const wsWant = 2.5 + WX.rain * 6 + here * WX.rain * 5;
   SQ.ws += (wsWant - SQ.ws) * Math.min(1, dt * 0.3);
   /* Gusts are impulses that decay, not a noise: you feel each one. */
   SQ.gust *= Math.exp(-dt / 1.6);
-  if (Math.random() < dt * (0.03 + 0.55 * here * WX.rain))
-    SQ.gust = Math.max(SQ.gust, 0.5 + 0.5 * Math.random());
+  if (RND.weather() < dt * (0.03 + 0.55 * here * WX.rain))
+    SQ.gust = Math.max(SQ.gust, 0.5 + 0.5 * RND.weather());
   if (WX.rain > 0.05){
     SQ.cellT -= dt;
-    if (SQ.cellT <= 0){ spawnCell(300); SQ.cellT = 45 + Math.random() * 60; }
+    if (SQ.cellT <= 0){ spawnCell(300); SQ.cellT = 45 + RND.weather() * 60; }
   } else SQ.cellT = Math.min(SQ.cellT, 4);
   for (let i = SQ.cells.length - 1; i >= 0; i--){
     const c = SQ.cells[i];
@@ -200,10 +200,10 @@ function puddleBurst(by, x, y, h, v){
   const n = Math.min(80, 18 + v * 3);
   for (let i = 0; i < n; i++){
     const side = i % 2 ? 1 : -1;
-    const lat = side * (1.2 + v * 0.30) * (0.5 + Math.random());
-    const fw = v * (0.25 + Math.random() * 0.3);
-    sprayOne(x + (Math.random() - 0.5) * 1.5, y + (Math.random() - 0.5) * 1.5, 0.15,
-             ch * fw - sh * lat, sh * fw + ch * lat, 1.6 + v * 0.16 * Math.random() + Math.random());
+    const lat = side * (1.2 + v * 0.30) * (0.5 + RND.weather());
+    const fw = v * (0.25 + RND.weather() * 0.3);
+    sprayOne(x + (RND.weather() - 0.5) * 1.5, y + (RND.weather() - 0.5) * 1.5, 0.15,
+             ch * fw - sh * lat, sh * fw + ch * lat, 1.6 + v * 0.16 * RND.weather() + RND.weather());
   }
   const pi = puddleAt(x, y, 0.5);
   if (pi >= 0){ const q = PUDDLES[pi]; ripple(q.x, q.y, q.r * 1.6, 0.9, 0.5, true); }
@@ -232,8 +232,11 @@ function brollyOf(b){
     const p = b.kind === 'granny' ? 0.75 : b.kind === 'shopper' ? 0.45
             : b.kind === 'manager' ? 1 : 0;
     const cols = ['#2b4f8a', '#a83232', '#2f6b45', '#d9b23a', '#5b3f7a', '#262a2e', '#c4567a'];
-    b.brolly = Math.random() < p
-             ? (b.kind === 'manager' ? '#1f4e9c' : cols[Math.floor(Math.random() * cols.length)])
+    /* From WHO it is, not from a stream: this is first asked by whatever
+       wants to know, often the drawing code, so a roll here would make the
+       day depend on the frame rate. */
+    b.brolly = pick01(b.pid || 0, 11) < p
+             ? (b.kind === 'manager' ? '#1f4e9c' : cols[Math.floor(pick01(b.pid || 0, 12) * cols.length)])
              : null;
   }
   return b.brolly;
@@ -260,18 +263,18 @@ function stepRain(dt){
     /* Rings on the Tay, wherever it is coming down hardest. */
     let n = 70 * r0 * dt;
     while (n > 0){
-      if (n < 1 && Math.random() > n) break;
+      if (n < 1 && RND.weather() > n) break;
       n -= 1;
-      const x = X0 - 40 + Math.random() * (PARK_L + 100), y = -104 + Math.random() * 72;
-      if (Math.random() < rainAt(x, y))
-        ripple(x, y, 0.3 + Math.random() * 0.35, 0.5 + Math.random() * 0.3, 0.5, false);
+      const x = X0 - 40 + RND.weather() * (PARK_L + 100), y = -104 + RND.weather() * 72;
+      if (RND.weather() < rainAt(x, y))
+        ripple(x, y, 0.3 + RND.weather() * 0.35, 0.5 + RND.weather() * 0.3, 0.5, false);
     }
     /* And on the puddles. */
     for (const q of PUDDLES){
       if (q.f < 0.15) continue;
-      if (Math.random() < dt * 1.2 * q.r * q.f * rainAt(q.x, q.y)){
-        const a = Math.random() * 6.28, d = Math.random() * q.r * q.f * 0.8;
-        ripple(q.x + Math.cos(a) * d, q.y + Math.sin(a) * d * 0.7, 0.25 + Math.random() * 0.2,
+      if (RND.weather() < dt * 1.2 * q.r * q.f * rainAt(q.x, q.y)){
+        const a = RND.weather() * 6.28, d = RND.weather() * q.r * q.f * 0.8;
+        ripple(q.x + Math.cos(a) * d, q.y + Math.sin(a) * d * 0.7, 0.25 + RND.weather() * 0.2,
                0.45, 0.55, false);
       }
     }
@@ -286,12 +289,12 @@ function stepRain(dt){
     if (v > 3){
       let n = w * (v - 3) * 6 * dt;
       while (n > 0){
-        if (n < 1 && Math.random() > n) break;
+        if (n < 1 && RND.weather() > n) break;
         n -= 1;
-        const side = Math.random() < 0.5 ? 1 : -1;
+        const side = RND.weather() < 0.5 ? 1 : -1;
         sprayOne(car.x - ch * LR + -sh * side * HALF_W, car.y - sh * LR + ch * side * HALF_W, 0.15,
-                 vx * 0.45 + (Math.random() - 0.5) * 1.6, vy * 0.45 + (Math.random() - 0.5) * 1.6,
-                 1.2 + Math.random() * 1.8);
+                 vx * 0.45 + (RND.weather() - 0.5) * 1.6, vy * 0.45 + (RND.weather() - 0.5) * 1.6,
+                 1.2 + RND.weather() * 1.8);
       }
     }
     const pi = puddleAt(car.x, car.y, 0.6);
@@ -307,12 +310,12 @@ function stepRain(dt){
   for (const c of CARS){
     if (c.done || c.held || c.airborne || c.swim || c.abyss) continue;
     const v = Math.abs(c.spd || 0);
-    if (w > 0.12 && v > 3 && Math.random() < w * (v - 3) * 2.5 * dt){
-      const ch = Math.cos(c.h), sh = Math.sin(c.h), side = Math.random() < 0.5 ? 1 : -1;
+    if (w > 0.12 && v > 3 && RND.weather() < w * (v - 3) * 2.5 * dt){
+      const ch = Math.cos(c.h), sh = Math.sin(c.h), side = RND.weather() < 0.5 ? 1 : -1;
       sprayOne(c.x - ch * c.model.l * 0.35 - sh * side * c.model.w * 0.45,
                c.y - sh * c.model.l * 0.35 + ch * side * c.model.w * 0.45, 0.15,
-               ch * c.spd * 0.45 + (Math.random() - 0.5) * 1.4,
-               sh * c.spd * 0.45 + (Math.random() - 0.5) * 1.4, 1 + Math.random() * 1.4);
+               ch * c.spd * 0.45 + (RND.weather() - 0.5) * 1.4,
+               sh * c.spd * 0.45 + (RND.weather() - 0.5) * 1.4, 1 + RND.weather() * 1.4);
     }
     const pi = v > 2.5 ? puddleAt(c.x, c.y, 0.4) : -1;
     if (pi >= 0 && c.inPud !== pi) puddleBurst(c, c.x, c.y, c.h, v);
@@ -348,12 +351,12 @@ function stepRain(dt){
     if (WX.rain < 0.05){ b.brollyLost = false; continue; }   // dry: a new one
     /* And a gust under a squall takes umbrellas. */
     if (SQ.gust > 0.7 && brollyUp(b) && rainHere(b.x, b.y) > 0.45 &&
-        Math.random() < dt * 0.04){
+        RND.weather() < dt * 0.04){
       b.brollyLost = true; b.brollyT = simClock;
       b.stareT = 2.2; b.stareAt = [b.x + wv[0] * 3, b.y + wv[1] * 3];
       FLY.push({ x:b.x, y:b.y, z:2.0, vx:wv[0] * 0.5, vy:wv[1] * 0.5,
-                 vz:2 + Math.random() * 2, h:Math.random() * 6.28,
-                 r:(Math.random() - 0.5) * 9, col:b.brolly, t:0 });
+                 vz:2 + RND.weather() * 2, h:RND.weather() * 6.28,
+                 r:(RND.weather() - 0.5) * 9, col:b.brolly, t:0 });
       RAIN.brollies++;
       exciteAt(b.x, b.y, 2);
     }

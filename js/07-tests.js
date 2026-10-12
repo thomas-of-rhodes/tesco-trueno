@@ -119,6 +119,10 @@ function straightHb(){
    a 172 m aisle as though it were fog. */
 function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
   const wSave = WORLD, vSave = visit, cSave = simClock;
+  /* Its own fixed seed, one per run in order: the suite comes out the same
+     every time, and the live day carries on exactly where it was. */
+  const rngSave = saveRng();
+  seedAll(RNG_TEST.base + (RNG_TEST.n++));
   /* MOVERS is global while WORLD is swapped under it, so without this every
      open-loop rig would quietly inherit the site's 26 trolleys in its sense field
      and the straight-line tests would stop being straight lines. */
@@ -234,6 +238,7 @@ function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
   WORLD = wSave; visit = vSave; simClock = cSave; TOD = todSave;
   LORRY_PIN = lpSave; TRAFFIC_OFF = tfSave;
   CENSUS.mute = censusMuteSave;
+  loadRng(rngSave);
   for (const k in lorrySave) LORRY[k] = lorrySave[k];
   WX.wet = wxSave.wet; WX.rain = wxSave.rain;
   WX.spell = wxSave.spell; WX.next = wxSave.next;
@@ -306,6 +311,7 @@ function compare6(secs){
 
 function runTests(){
   const rows = [];
+  RNG_TEST.n = 0;               // the same sequence of rig seeds every run
   /* Everything in here is measured against dry references unless it says
      otherwise, and the open-loop rigs below do not go through driveSim, so the
      clamp goes on for the duration of the suite. */
