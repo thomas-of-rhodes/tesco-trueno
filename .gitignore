@@ -1,3 +1,6 @@
 # pre-patch snapshots, kept on disk but not in history
 *.backup-*.html
 *.pre-*.html
+
+# dev-only: local static server config and the test harness
+.claude/

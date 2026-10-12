@@ -797,8 +797,8 @@ function censusCarDone(c){
   const v = c.veh;
   if (v.bay && v.bay.car && v.bay.car.veh === v){ CENSUS.ev.carsParked++; return; }
   if (v.fate === 'void'){ CENSUS.ev.carsVoid++; return; }
-  const g = gateSpot();
-  if (c.x < g[0] + 8){
+  const g = carGate();
+  if (Math.hypot(c.x - g[0], c.y - g[1]) < 12){
     v.fate = 'exited'; CENSUS.ev.carsExited++;
     if (v.ownerPid !== null && PEOPLE[v.ownerPid]) closeVisit(PEOPLE[v.ownerPid], 'drove');
     return;
@@ -1027,6 +1027,10 @@ window.__person = function(q){
    slots permanently full - so twenty, which is where arrivals stop being the
    thing that is starved. The number is not a guess either way; it is whatever
    leaves neither the entrance queueing nor the aisles jammed. */
+/* Re-tested after the west end was rebuilt (2026-10-12): 26 filled every slot,
+   left 18 cars stopped in the aisles and got 22-34 cars out in 900 s against
+   41 at 20. The entrance is no longer the limit - manoeuvring in and out of
+   bays in 6 m aisles is - so more cars is still just more jam. 20 stays. */
 const MAX_CARS = 20, OUT_RESERVE = 6;
 function roomToArrive(){ return CARS.length < MAX_CARS - OUT_RESERVE; }
 function roomToLeave(){ return CARS.length < MAX_CARS; }
@@ -1197,8 +1201,8 @@ function spawnArrival(){
   for (let k = 0; k < 6; k++){
     const bay = pickBay(tried);
     if (!bay) return false;
-    const g = gateSpot();
-    const c = makeNpc(pickModel(), g[0] - 2, g[1], 0, 'in');
+    const g = carGate();
+    const c = makeNpc(pickModel(), g[0] + 0.5, g[1], 0, 'in');
     bay.claimed = true;
     c.bay = bay;
     if (routeFor(c, bay.ax, bay.ay)){ syncNpc(c); return true; }
@@ -1319,6 +1323,12 @@ function beginDeparture(bay){
    nobody needs weight transfer to park a Honda Jazz. A turn-rate limit of
    v/5 m is what stops it looking like a hovercraft. */
 const NPC_LOOK = 9;
+/* Metres left of a lane's centreline. 1.6 put a car's flank 0.3 m off the
+   parked noses in a 6 m aisle, so its own look-ahead kept seeing them; 1.1
+   leaves 0.65 m there and still parts opposing cars by 0.3 m. Measured over
+   840 s: 41 cars out and 9 failed departures at 1.1, against 27-35 and 18 at
+   1.6, and 23 and 21 with no keep-left at all. */
+let KEEP_LEFT = 1.1;
 /* The bay rows run PARALLEL to the aisles, which means three empty spaces in a
    row are a bypass lane and everybody knows it. This is the manoeuvre a blocked
    driver actually makes once waiting stops feeling like an option: swing out of
@@ -1419,7 +1429,7 @@ function stepNpc(c, dt){
       else {
         /* The end of the road is the gate. Anywhere else, the path was lost
            (or never found) - get a new one, waiting if there is none yet. */
-        const g = gateSpot();
+        const g = carGate();
         if (Math.hypot(g[0] - c.x, g[1] - c.y) > 12){
           if (!routeFor(c, g[0], g[1])){
             c.wait = 2 + Math.random() * 2;
@@ -1432,6 +1442,16 @@ function stepNpc(c, dt){
     } else {
       const n = RNODE[c.path[c.at]];
       tx = n.x; ty = n.y;
+      /* Keep LEFT. Every car aimed at the dead centre of every lane, so two
+         meeting in an aisle met nose to nose and the whole place locked solid
+         at the entrance - fifteen cars at 0 mph. Aiming 1.6 m to the left of
+         the centreline, measured off the direction of the leg being driven,
+         puts opposing cars 3.2 m apart: enough to pass. Left of +x is +y here,
+         the railway side, which is left as you drive in towards the store. */
+      const pn = c.at > 0 ? RNODE[c.path[c.at - 1]] : null;
+      const lx = pn ? n.x - pn.x : n.x - c.x, ly = pn ? n.y - pn.y : n.y - c.y;
+      const ll = Math.hypot(lx, ly);
+      if (ll > 1){ tx += -ly / ll * KEEP_LEFT; ty += lx / ll * KEEP_LEFT; }
       /* Advanced in ONE place. It used to step here and again at the bottom of
          the function, so every other waypoint was skipped and the route became
          a set of straight lines through the bay rows. */
@@ -1467,7 +1487,7 @@ function stepNpc(c, dt){
         TRAF.turnedRound = (TRAF.turnedRound || 0) + 1;
       }
       if (c.state === 'in' && c.bay) routeFor(c, c.bay.ax, c.bay.ay);
-      else if (c.state === 'go') { const g = gateSpot(); routeFor(c, g[0], g[1]); }
+      else if (c.state === 'go') { const g = carGate(); routeFor(c, g[0], g[1]); }
     }
   }
   if (c.state === 'park'){
@@ -1579,7 +1599,7 @@ function stepNpc(c, dt){
     tx = c.bay.ax; ty = c.bay.ay;
     if (Math.hypot(tx - c.x, ty - c.y) < 2.0){
       c.state = 'go';
-      const g = gateSpot();
+      const g = carGate();
       /* No way out RIGHT NOW is not no way out: edges close while something
          stands on them. Wait in the aisle and ask again, rather than vanish. */
       if (!routeFor(c, g[0], g[1])){
@@ -1864,7 +1884,7 @@ function stepNpc(c, dt){
      the new route is no better either. */
   if (c.blocked > 8 && (c.replanned || 0) < 2){
     c.replanned = (c.replanned || 0) + 1; c.blocked = 0;
-    const tgt = (c.state === 'go') ? gateSpot()
+    const tgt = (c.state === 'go') ? carGate()
               : (c.bay ? [c.bay.ax, c.bay.ay] : null);
     if (tgt && (c.state === 'in' || c.state === 'go')){
       if (routeFor(c, tgt[0], tgt[1])) TRAF.replans = (TRAF.replans || 0) + 1;
@@ -1955,7 +1975,7 @@ function stepNpc(c, dt){
     }
     if (!moved){
       if (c.bay){ c.bay.claimed = false; c.bay.leaving = false; c.bay = null; }
-      const g = gateSpot();
+      const g = carGate();
       if (c.state !== 'go' && (c.fedUp || 0) < 3 && routeFor(c, g[0], g[1])){
         c.state = 'go'; c.linedUp = false;
         c.bypasses = 1; c.replanned = 0;
@@ -1988,7 +2008,7 @@ function stepNpc(c, dt){
        last resort below, and is counted. */
     if ((c.state === 'in' || c.state === 'park') && !c.quit){
       if (c.bay){ c.bay.claimed = false; c.bay.leaving = false; }
-      const g = gateSpot();
+      const g = carGate();
       if (routeFor(c, g[0], g[1])){
         c.quit = true; c.bay = null; c.state = 'go'; c.linedUp = false;
         c.blocked = 0; c.queued = 0;
@@ -2004,7 +2024,7 @@ function stepNpc(c, dt){
        with the engine off and then try the gate again, as on the fed-up
        ladder. Never evaporate. */
     if (!c.bay || c.state === 'in' || c.state === 'park'){
-      const g = gateSpot();
+      const g = carGate();
       if (routeFor(c, g[0], g[1])){
         if (c.bay){ c.bay.claimed = false; c.bay.leaving = false; c.bay = null; }
         c.state = 'go'; c.linedUp = false;
@@ -2067,8 +2087,8 @@ function stepNpc(c, dt){
   c.x += Math.cos(c.h) * c.spd * dt;
   c.y += Math.sin(c.h) * c.spd * dt;
   if (c.state === 'go'){
-    const g = gateSpot();
-    if (c.x < g[0] + 2){ c.done = true; TRAF.left++; }
+    const g = carGate();
+    if (c.x < g[0] + 3 && Math.abs(c.y - g[1]) < 5){ c.done = true; TRAF.left++; }
   }
   syncNpc(c);
 }
@@ -2998,12 +3018,16 @@ const PVX = X0 + 40, PVR = 7.0;
    eats the first few bays of the prime row, which is what it does in life, without
    standing half a metre out in the road. */
 const PVY = Y0 + WALK_W + PRIME_W - PVR;
-/* Long curved-hoop canopies, mostly in a row along the island, a couple out in the
-   bays. Open-ended and see-through, but packed with trolleys, so: solid. */
-const SHELTERS = [[X0 + 22, ISLAND_Y], [X0 + 36, ISLAND_Y], [X0 + 50, ISLAND_Y],
-                  [X0 + 112, ISLAND_Y], [X0 + 126, ISLAND_Y],
-                  [X0 + 80, BANDS[1] + 2.4], [X0 + 148, BANDS[0] + 13.2]];
-const SHL = 12, SHW = 2.4;
+/* Curved-hoop canopies, and Thomas's photo (2026-10-12) says what they really
+   are: two back-to-back bays roofed over. So the long axis runs ACROSS the car
+   park, along the depth of the bays, standing on a back-to-back line, one bay
+   wide - not a 12 m tube lying along the island. Placed on the bay grid
+   (BAYLINE) so each takes exactly two spaces, clear of the masts, the grass
+   beds and Click+Collect. Open-ended and see-through, but packed with
+   trolleys, so: solid. SHL is the long side, which is now the y extent. */
+const SHELTERS = [[BAYLINE(20), CROSS[0]], [BAYLINE(33), CROSS[0]], [BAYLINE(52), CROSS[0]],
+                  [BAYLINE(7), CROSS[1]], [BAYLINE(14), CROSS[1]], [BAYLINE(40), CROSS[1]]];
+const SHL = 8.8, SHW = 2.7;
 /* Masts: on the island facing the road, and where four bays meet. The ones out in
    the bays each have a ring of black-and-white bollards at their foot, so what he
    actually clips is a bollard - smaller, and there are four of them. The ones on the
@@ -3121,7 +3145,7 @@ function buildSite(){
   addBox(w, PVX, PVY, PVR, PVR * 0.414, 0, 'hard', 4.2);
   addBox(w, PVX, PVY, PVR * 0.414, PVR, 0, 'hard', 4.2);
   for (const sh of SHELTERS)                        // hoop canopies, packed solid
-    addBox(w, sh[0], sh[1], SHL, SHW, 0, 'hard', 2.3);       // hoop canopy
+    addBox(w, sh[0], sh[1], SHL, SHW, Math.PI / 2, 'hard', 2.3);   // hoop canopy, across
   addBox(w, (X0 + X1) / 2, ISLAND_Y, PARK_L * 0.48, 0.5, 0, 'kerb', 0.12);  // the island
   for (const m of MASTS){
     addBox(w, m[0], m[1], 0.55, 0.55, 0, 'hard', 8.0);       // CCTV mast
@@ -3160,7 +3184,12 @@ function buildSite(){
     const toAisle = (ri === 0 || ri % 2 === 1) ? 1 : -1;
     const h = toAisle > 0 ? -Math.PI / 2 : Math.PI / 2;
     const prized = (ri === 0 ? 1.9 : 1.0);
-    for (let x = X0 + 4; x < X1 - 5; x += BAY){
+    /* Two bays further in than the paint used to start. The west end is a
+       two-way road joining every aisle, about 8 m of it - the real one is - and
+       with the rows starting at X0 + 4 it was 2.5 m of tarmac that every car in
+       and out of the place had to share. 14 bays, gladly given. Still on the
+       BAYLINE grid, so the masts keep their corners. */
+    for (let x = X0 + 4 + 2 * BAY; x < X1 - 5; x += BAY){
       /* The bay itself must be clear, and so must the spot in the aisle you
          line up from - a bay you cannot reach is no more use than a solid one. */
       if (!clearHere(x, y, 1.25) ||
@@ -3538,7 +3567,7 @@ function aisleAudit(){
      alone let a mast sit exactly on a bay line with its 1.5 m bollard ring sticking
      out into the road - which is the whole failure mode this audit exists for. */
   const items = [];
-  for (const sh of SHELTERS) items.push([sh[1], SHW / 2]);
+  for (const sh of SHELTERS) items.push([sh[1], SHL / 2]);     // long side across
   for (const m of MASTS)
     items.push([m[1], onIsland(m) ? 0.3 : 1.62]);        // ring only out in the bays
   items.push([PVY, PVR]);                                // the rotunda
@@ -4310,7 +4339,7 @@ function seedTrolleys(){
     return sd / 0x7fffffff; };
   for (const sh of SHELTERS)                     // a few still parked properly
     for (let i = 0; i < 2; i++)
-      MOVERS.push(makeTrolley(sh[0] - 2 + i * 1.1, sh[1], 0));
+      MOVERS.push(makeTrolley(sh[0], sh[1] - 2 + i * 1.1, Math.PI / 2));
   for (let i = 0; i < 16; i++){                  // and the strays
     const y = ROWY[Math.floor(rnd() * ROWY.length)] + (rnd() - 0.5) * 3.4;
     const x = X0 + 8 + rnd() * (PARK_L - 16);
@@ -5285,7 +5314,7 @@ function buildLattice(){
   /* Along each lane, plus a column at each end of the bay rows - the only two
      places the rows do not block a crossing. */
   const xs = [];
-  const x0 = X0 + 2.2, x1 = X1 + 1.5;
+  const x0 = X0 + 4.2, x1 = X1 + 1.5;        // west: the middle of the 8 m road
   const n = Math.max(2, Math.round((x1 - x0) / RSPACING));
   for (let i = 0; i <= n; i++) xs.push(x0 + (x1 - x0) * i / n);
 
@@ -6165,7 +6194,7 @@ const AREAS = [
   { k:'tar',     x0:X0,  x1:X1 + 4, y0:Y0, y1:Y1 },
   { k:'lane',    x0:X0,  x1:X1,   y0:Y1 - ROAD_W, y1:Y1 },
   { k:'walk',    x0:X0,  x1:X1 + 4, y0:Y0, y1:KERB_Y },
-  { k:'island',  x0:X0 + 6, x1:X1 - 6, y0:ISLAND_Y - ISLAND_W / 2,
+  { k:'island',  x0:X0 + 9, x1:X1 - 6, y0:ISLAND_Y - ISLAND_W / 2,
                  y1:ISLAND_Y + ISLAND_W / 2 },
   { k:'grass',   x0:X0 + 18, x1:X0 + 46, y0:BANDS[0] + 15.6, y1:BANDS[0] + 20 },
   { k:'grass',   x0:X0 + 74, x1:X0 + 102, y0:BANDS[1] + 15.6, y1:BANDS[1] + 20 },
@@ -6400,7 +6429,7 @@ function consignTrolley(m){
   VOID.trolleys++;
   for (const b of BEINGS) if (b.carry === m) b.carry = null;
   const sh = SHELTERS[Math.floor(Math.random() * SHELTERS.length)];
-  m.x = sh[0] - 2 + Math.floor(Math.random() * 4) * 1.1; m.y = sh[1]; m.h = 0;
+  m.x = sh[0]; m.y = sh[1] - 2 + Math.floor(Math.random() * 4) * 1.1; m.h = Math.PI / 2;
   m.z = 0; m.vz = 0; m.vx = 0; m.vy = 0; m.r = 0; m.abyss = 0;
   clearSwim(m);
   syncBox(m);
@@ -6411,7 +6440,7 @@ function consignTrolley(m){
 function truenoReturns(how){
   car.voidHow = how || 'void';
   clearSwim(car);
-  const g = gateSpot();
+  const g = carGate();
   car.x = g[0] + 3; car.y = g[1]; car.h = 0;
   car.vx = 0; car.vy = 0; car.r = 0; car.ax = 0; car.ar = 0;
   car.airborne = 0; car.vzz = 0; car.abyss = 0;
@@ -6498,18 +6527,20 @@ function spitch(X, Y, L, W, z0, z1, col, axis, n){
      roof over, trolleys nested underneath. Stepping four boxes up each side fakes
      the curve well enough at this scale. */
   for (const sh of SHELTERS){
-    for (let i = 0; i <= 6; i++){
-      const hx = sh[0] - SHL / 2 + i * (SHL / 6);
+    /* Five hoops along its length (the photo has five), each a tubular arch
+       across the one-bay width. */
+    for (let i = 0; i <= 4; i++){
+      const hy = sh[1] - SHL / 2 + i * (SHL / 4);
       for (const k of [0, 1, 2, 3]){
-        const fy = [1.0, 0.92, 0.68, 0.0][k], z = [0, 1.05, 1.75, 2.15][k];
+        const fx = [1.0, 0.92, 0.68, 0.0][k], z = [0, 1.05, 1.75, 2.15][k];
         const zt = [1.05, 1.75, 2.15, 2.35][k];
-        sbox(hx, sh[1] - SHW / 2 * fy, 0.3, 0.16, z, zt, '#9aa3a6');
-        if (fy > 0.01) sbox(hx, sh[1] + SHW / 2 * fy, 0.3, 0.16, z, zt, '#9aa3a6');
+        sbox(sh[0] - SHW / 2 * fx, hy, 0.16, 0.3, z, zt, '#9aa3a6');
+        if (fx > 0.01) sbox(sh[0] + SHW / 2 * fx, hy, 0.16, 0.3, z, zt, '#9aa3a6');
       }
     }
-    sbox(sh[0], sh[1], SHL, SHW * 0.9, 2.3, 2.45, 'rgba(206,214,216,0.55)');
-    for (let i = 0; i < 5; i++)                    // the trolleys inside
-      sbox(sh[0] - SHL / 2 + 1.2 + i * 2.2, sh[1], 1.9, 0.6, 0.2, 1.0, '#aeb6ba');
+    sbox(sh[0], sh[1], SHW * 0.9, SHL, 2.3, 2.45, 'rgba(206,214,216,0.55)');
+    for (let i = 0; i < 3; i++)                    // the trolleys inside
+      sbox(sh[0], sh[1] - SHL / 2 + 1.6 + i * 2.5, 0.6, 1.9, 0.2, 1.0, '#aeb6ba');
   }
   for (let mi = 0; mi < MASTS.length; mi++){
     const m = MASTS[mi];
@@ -6529,7 +6560,7 @@ function spitch(X, Y, L, W, z0, z1, col, axis, n){
       sbox(m[0] + d[0], m[1] + d[1], 0.23, 0.23, 0.6, 0.78, '#e8ebee');
     }
   }
-  sbox((X0 + X1) / 2, ISLAND_Y, PARK_L * 0.96, ISLAND_W, 0, 0.14, '#8d9296');
+  sbox((X0 + 9 + X0 + 168.6) / 2, ISLAND_Y, 159.6, ISLAND_W, 0, 0.14, '#8d9296');
   sbox(CC[0], CC[1], 13, 4.4, 0, 3.4 * BH, '#a8332c');     // click and collect
   sbox(CC[0] + 3.4, CC[1], 4.2, 4.5, 0.3, 2.9 * BH, '#c9ccc9');  // roller shutter
   sbox(CC[0], CC[1], 13.6, 5.0, 3.4 * BH, 3.8 * BH, '#8e9490');
@@ -6989,7 +7020,7 @@ function release(){
     o.wait = 0.7 + land * 0.12;
     o.blocked = 0; o.queued = 0; o.replanned = 0;
     if (!o.repark && o.bay && (o.state === 'in' || o.state === 'go')){
-      const tgt = (o.state === 'go') ? gateSpot() : [o.bay.ax, o.bay.ay];
+      const tgt = (o.state === 'go') ? carGate() : [o.bay.ax, o.bay.ay];
       routeFor(o, tgt[0], tgt[1]);
     }
     syncNpc(o);
@@ -8465,8 +8496,9 @@ function buildPlaces(){
   for (const sh of SHELTERS){
     /* The pen approach has to be somewhere a person can actually stand. Half of
        these sat inside the island kerb. */
-    for (const dy of [0, 2.4, -2.4, 4.2, -4.2]){
-      const q = [sh[0] + SHL / 2 + 1.6, sh[1] + dy];
+    /* Either open end, out in the aisle it faces. */
+    for (const e of [[0, 1], [0, -1], [1.2, 1], [-1.2, -1]]){
+      const q = [sh[0] + e[0], sh[1] + e[1] * (SHL / 2 + 1.6)];
       if (sdfAt(q[0], q[1]) > 0.9){ PLACES.pens.push(q); break; }
     }
   }
@@ -8924,6 +8956,16 @@ const BEHAVE = {
 
 /* The way in and out. Every arrival and departure uses it, because a car park
    where people blink into existence is a screensaver rather than a place. */
+/* The CAR entrance, on the railway side. The real one is where the access road
+   from the mini-roundabout by the Seabraes footbridge runs into the car park
+   along the railway (checked on the aerial photo, 2026-10-12) - not the end of
+   the prime aisle, where it was. Pedestrians and the bus keep gateSpot below:
+   they come up from Riverside Drive. */
+const CAR_GATE = [X0 + 1.5, 0];
+function carGate(){
+  CAR_GATE[1] = Y1 - ROAD_W / 2;
+  return CAR_GATE;
+}
 const GATE = [X0 + 3, 0];
 function gateSpot(){
   GATE[1] = Y0 + WALK_W + PRIME_W + PAISLE / 2;
