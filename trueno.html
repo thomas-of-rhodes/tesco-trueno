@@ -690,6 +690,10 @@ const TOWN = (function(){
              name:'Derek Paterson', being:null, car:null, visits:[], visit:null });
   out.push({ rid:rid++, kind:'trolleyboy', sex:'m', first:'Kyle',  last:'Reid',
              name:'Kyle Reid', being:null, car:null, visits:[], visit:null });
+  /* The night manager. Same job, less of the enthusiasm, and a car that has
+     seen better years. */
+  out.push({ rid:rid++, kind:'manager', night:true, sex:'m', first:'Gordon', last:'Fraser',
+             name:'Gordon Fraser', being:null, car:{ sprite:'jazz' }, visits:[], visit:null });
   /* Habits, from a generator of their own so the names above never move. Some
      people use the free parking to go into town as a matter of course; most
      only ever come for the shop. */
@@ -723,6 +727,126 @@ function wantsTown(r){
   const day = (TOD > 0.33 && TOD < 0.70) ? 1 : 0.35;
   return Math.random() < (r.townish ? 0.55 : 0.04) * day;
 }
+/* Staff shifts. The shop's own staff are off the map at 'work'; at each shift
+   boundary a few of them come out to their cars and a few new ones drive in.
+   SWAP is per wave and deliberately small: a real Tesco Extra changes over
+   dozens at once, but here a clock hour is 50 real seconds and the road moves
+   about three cars a minute, so thirty at once would be a queue to the A85. */
+const SHIFTS = { at:[0.25, 7 / 12, 11 / 12], swap:4, spread:70,
+                 lastTod:null, queue:[] };
+/* What a resident looks like walking about. Shop staff are not a sprite of
+   their own; in their own clothes, they look like anybody else. */
+function figureOf(r){ return KINDS[r.kind] ? r.kind : 'shopper'; }
+/* The model a resident drives - the same car every visit once they have one. */
+function modelOf(r){
+  if (r && r.car && r.car.sprite)
+    for (const m of NPC_MODELS) if (m.sprite === r.car.sprite) return m;
+  return pickModel();
+}
+/* Staff park out of the way: the least wanted spaces, so the customers get the
+   good ones. Somewhere in the bottom quarter, not always the same one. */
+function staffBay(){
+  const free = BAYS.filter(function(b){ return !b.car && !b.claimed && !b.leaving; });
+  if (!free.length) return null;
+  free.sort(function(a, b){ return a.want - b.want; });
+  return free[Math.floor(Math.random() * Math.max(1, Math.floor(free.length / 4)))];
+}
+/* A staff car coming in. `being` for the Manager or Trolleyboy, who exist on
+   the map all along; otherwise a shop-staff resident starting a shift. */
+function spawnStaffCar(r, being){
+  /* Staff may use the slots held back for departures. Waiting behind the
+     customers' arrival limit, most of an incoming shift sat in the queue all
+     day (4 staff cars in against 12 out) and the shop slowly ran out of staff. */
+  if (!r || !roomToLeave() || !gateClear()) return null;
+  const bay = staffBay();
+  if (!bay) return null;
+  const g = carGate();
+  const c = makeNpc(modelOf(r), g[0] + 0.5, g[1], 0, 'in');
+  bay.claimed = true;
+  c.bay = bay;
+  c.veh.ownerRid = r.rid;
+  if (being) c.staffBeing = being;
+  else { openVisit(r, 'car', 'car', bay); c.shopStaff = true; }
+  if (routeFor(c, bay.ax, bay.ay)){ syncNpc(c); TRAF.staffIn = (TRAF.staffIn || 0) + 1; return c; }
+  CARS.pop(); bay.claimed = false;
+  if (!being){ r.visits.pop(); r.visit = null; }
+  return null;
+}
+/* The Manager or Trolleyboy, if that is whose car this is. */
+function staffBeingOf(veh){
+  if (!veh || veh.ownerRid === null || veh.ownerRid === undefined) return null;
+  const r = TOWN[veh.ownerRid];
+  if (!r || (r.kind !== 'manager' && r.kind !== 'trolleyboy')) return null;
+  return (r.being && BEINGS.indexOf(r.being) >= 0) ? r.being : null;
+}
+/* They have parked: out they get, beside their own car. */
+function settleStaff(sb, c){
+  const bay = c.bay;
+  sb.away = false; sb.gone = false; sb.voidT = 0;
+  sb.x = bay.x + bay.toAisle * 1.4; sb.y = bay.y;
+  sb.ownBay = bay; sb.parkedAt = bayStand(bay);
+  sb.carSprite = c.model.sprite;
+  bay.ownerCid = sb.cid; bay.longStay = true;
+  c.veh.ownerPid = sb.pid;
+  if (sb.res) sb.res.car = { vid:c.veh.vid, sprite:c.veh.sprite };
+  sb.carComing = null; sb.carTries = 0;
+  /* Arriving for a shift walks in; one who was LEAVING and could not get out
+     is stood beside the car again and will have another go. */
+  if (!sb.leaving){ sb.arriving = true; goTo(sb, sb.home || pickPlace(PLACES.park), 4); }
+}
+/* A shop-staff resident at the end of their shift: out of the doors to their
+   car, like a shopper being fetched. */
+function endShift(r){
+  let veh = null;
+  for (const e of VEH) if (e.ownerRid === r.rid && !e.fate) veh = e;
+  const bay = veh && veh.bay && veh.bay.car && veh.bay.car.veh === veh ? veh.bay : null;
+  if (!bay) return false;
+  const dr = nearestPlace(PLACES.doors, bay.x, bay.y);
+  const b = addBeing(figureOf(r), dr[0], dr[1] + 1.2, r);
+  b.spawned = true; b.staff = true;
+  b.ownBay = bay; b.arrivedBy = 'car';
+  b.carSprite = veh.sprite; b.parkedAt = bayStand(bay);
+  bay.ownerCid = b.cid; veh.ownerPid = b.pid;
+  bay.leaving = true; bay.leaveBy = simClockNow() + 300;
+  b.life = 'outDoors';
+  TRAF.staffOut = (TRAF.staffOut || 0) + 1;
+  return true;
+}
+/* Once a second, from stepCensus. */
+function stepShifts(){
+  const t = TOD, last = SHIFTS.lastTod;
+  SHIFTS.lastTod = t;
+  if (last !== null){
+    for (const at of SHIFTS.at){
+      const crossed = last <= t ? (last < at && t >= at) : (last < at || t >= at);
+      if (!crossed) continue;
+      /* A wave: a few go, the same number come. */
+      const working = TOWN.filter(function(r){
+        return r.kind === 'staff' && r.visit && r.visit.out === null &&
+               r.visit.where === 'work' && !residentOnSite(r) && !r.visit.endAt;
+      });
+      for (let i = 0; i < SHIFTS.swap && working.length; i++){
+        const r = working.splice(Math.floor(Math.random() * working.length), 1)[0];
+        r.visit.endAt = simClockNow() + Math.random() * SHIFTS.spread;
+        SHIFTS.queue.push(simClockNow() + 15 + Math.random() * SHIFTS.spread);
+      }
+      CENSUS.ev.shiftWaves = (CENSUS.ev.shiftWaves || 0) + 1;
+    }
+  }
+  for (const r of TOWN){
+    const v = r.visit;
+    if (r.kind !== 'staff' || !v || v.out !== null || v.where !== 'work' || !v.endAt) continue;
+    if (simClockNow() >= v.endAt && !residentOnSite(r)){
+      if (endShift(r)) v.endAt = null;
+      else v.endAt = simClockNow() + 10;          // car not to hand; try again
+    }
+  }
+  for (let i = SHIFTS.queue.length - 1; i >= 0; i--){
+    if (simClockNow() < SHIFTS.queue[i]) continue;
+    if (spawnStaffCar(freeResident('staff'), null)) SHIFTS.queue.splice(i, 1);
+    else SHIFTS.queue[i] = simClockNow() + 8;      // no room just now
+  }
+}
 /* Hand a new being a resident of its kind who is not already on site. "On
    site" is checked against BEINGS itself rather than trusted from a flag,
    because the test rig empties and restores BEINGS wholesale and would leave
@@ -745,7 +869,14 @@ function freeResident(kind){
 /* `want` is a particular resident coming back into view - out of the shop
    doors, say - rather than whoever is free. */
 function claimResident(b, want){
-  const r = want || freeResident(b.kind);
+  let r = want || null;
+  if (!r && b.kind === 'manager'){
+    /* Two managers now: the day one unless this being is the night one. */
+    r = TOWN.find(function(q){
+      return q.kind === 'manager' && !!q.night === !!b.night && !residentOnSite(q);
+    }) || null;
+  }
+  if (!r) r = freeResident(b.kind);
   if (!r) return null;
   r.being = b;
   return r;
@@ -828,6 +959,11 @@ function closeVisit(rec, how){
 function censusBeingOut(b){
   if (CENSUS.mute || !hasLife(b)) return;
   const rec = PEOPLE[b.pid];
+  if (b.toWork && b.res && b.res.visit && b.res.visit.out === null){
+    b.res.visit.where = 'work'; b.res.visit.endAt = null;
+    CENSUS.ev.toWork = (CENSUS.ev.toWork || 0) + 1;
+    return;
+  }
   if (b.toTown && b.res && b.res.visit && b.res.visit.out === null){
     const v = b.res.visit, stay = wanderStay();
     v.where = 'town'; v.left = simClockNow(); v.due = simClockNow() + stay; v.over = false;
@@ -956,6 +1092,7 @@ function stepCensus(dt){
   if (CENSUS.t < 1) return;
   CENSUS.t = 0;
   stepTown();
+  stepShifts();
   const c = census();
   CENSUS.last = c; CENSUS.samples++;
   const oc = c.cars.orphanLong + c.cars.orphanShort;
@@ -1041,7 +1178,15 @@ window.__person = function(q){
    41 at 20. The entrance is no longer the limit - manoeuvring in and out of
    bays in 6 m aisles is - so more cars is still just more jam. 20 stays. */
 const MAX_CARS = 20, OUT_RESERVE = 6;
-function roomToArrive(){ return CARS.length < MAX_CARS - OUT_RESERVE; }
+/* Nothing may be created on top of a car already standing in the gate. Shift
+   changes send staff cars in bursts, and five of them were made on the same
+   spot, inside each other, where none could ever move again. */
+function gateClear(){
+  const g = carGate();
+  for (const c of CARS) if (!c.done && Math.hypot(c.x - g[0], c.y - g[1]) < 7) return false;
+  return true;
+}
+function roomToArrive(){ return CARS.length < MAX_CARS - OUT_RESERVE && gateClear(); }
 function roomToLeave(){ return CARS.length < MAX_CARS; }
 function trafficStep(dt){
   /* Twice a second, not 120 times. This is a rate controller for something that
@@ -1622,17 +1767,27 @@ function stepNpc(c, dt){
          already had: the grannies drive the Jazz. Tying the two together means
          the car park's population comes out of its own traffic rather than
          being declared separately. */
+      /* The Manager or Trolleyboy: they already exist, so it is them who get
+         out, not a new person. Also covers one of them who tried to drive
+         home, could not get out, and parked up again. */
+      const sb = c.staffBeing || staffBeingOf(c.veh);
+      if (sb){
+        settleStaff(sb, c);
+        c.done = true;
+        TRAF.arrived++;
+        return;
+      }
       /* Whoever is already IN it gets out. A car that tried to leave, could not,
          and parked up again still has its owner at the wheel - it is only a new
          arrival if nobody is. */
       const back = c.veh && c.veh.ownerRid !== null && c.veh.ownerRid !== undefined
                  ? TOWN[c.veh.ownerRid] : null;
       const again = !!(back && back.visit && back.visit.out === null &&
-                       !residentOnSite(back) && KINDS[back.kind]);
-      const kind = again ? back.kind
+                       !residentOnSite(back));
+      const kind = again ? figureOf(back)
                  : (c.model.sprite === 'jazz' && Math.random() < 0.62) ? 'granny' : 'shopper';
       const w = addBeing(kind, c.bay.x + c.bay.toAisle * 1.4, c.bay.y, again ? back : undefined);
-      if (again) TRAF.reparkedOwner = (TRAF.reparkedOwner || 0) + 1;
+      if (again && !c.shopStaff) TRAF.reparkedOwner = (TRAF.reparkedOwner || 0) + 1;
       w.home = [c.bay.x + c.bay.toAisle * 1.4, c.bay.y];
       w.ownBay = c.bay;
       w.spawned = true;
@@ -1648,6 +1803,8 @@ function stepNpc(c, dt){
         if (w.res){ w.res.car = { vid:c.veh.vid, sprite:c.veh.sprite }; if (w.res.visit) w.res.visit.by = 'car'; } }
       /* Not everybody who parks here is here for Tesco. */
       if (!again && wantsTown(w.res)) w.life = 'toTown';
+      /* A member of staff starting a shift: into work, not into the shop. */
+      if (c.shopStaff){ w.toWork = true; w.staff = true; c.bay.longStay = true; }
       c.done = true;
       TRAF.arrived++;
       return;
@@ -8318,8 +8475,14 @@ function onShift(b){
   if (b.kind === 'gull') return !isNight();
   if (b.kind === 'granny') return shiftEdge(b, 0.28, 0.72);
   if (b.kind === 'shopper') return shiftEdge(b, 0.22, 0.80);
-  if (b.kind === 'trolleyboy') return shiftEdge(b, 0.24, 0.84);
-  if (b.kind === 'manager') return shiftEdge(b, 0.20, 0.86);
+  /* Kyle never clocks off. He has no shift, no car and no home to go to; he
+     is simply always here, pushing trolleys (Thomas, 2026-10-12: a joke on
+     capitalism). */
+  if (b.kind === 'trolleyboy') return true;
+  /* The night manager's hours are the day manager's turned inside out, with
+     a little overlap at each end so the handover has somebody on it. */
+  if (b.kind === 'manager') return b.night ? !shiftEdge(b, 0.24, 0.84)
+                                           : shiftEdge(b, 0.20, 0.86);
   return true;
 }
 
@@ -9187,7 +9350,15 @@ function stepBeings(dt){
         const dr = nearestPlace(PLACES.doors, b.x, b.y);
         b.tx = dr[0]; b.ty = dr[1];
         b.state = b.look;
-        if (walkTo(b, dt, b.k.speed)){
+        /* One step per tick: walkTo MOVES the being, so it is called once. */
+        const atDoor = walkTo(b, dt, b.k.speed);
+        if (atDoor && b.toWork){
+          /* Staff go in to WORK: off the map until their shift ends, with
+             the car left where it is. */
+          b.gone = true;
+          continue;
+        }
+        if (atDoor){
           b.inStore = true;
           /* A Tesco shop is a few minutes to the best part of an hour. */
           b.shopT = 90 + Math.random() * 900;
@@ -9404,10 +9575,12 @@ function stepBeings(dt){
     if (b.toCar && !b.away){
       if (!b.toCar.car){ b.toCar = null; }
       else {
-        b.tx = b.toCar.x + b.toCar.toAisle * 1.4; b.ty = b.toCar.y;
+        const st = bayStand(b.toCar), bx = WORLD.boxes[b.toCar.box];
+        b.tx = st[0]; b.ty = st[1];
         b.state = b.look;
-        if (walkTo(b, dt, b.k.speed * 1.2)){
-          if (roomToLeave()){
+        const near = bx && Math.hypot(bx.x - b.x, bx.y - b.y) < 3.6;
+        if (near || walkTo(b, dt, b.k.speed * 1.2)){
+          if (near && roomToLeave()){
             beginDeparture(b.toCar); b.toCar = null; b.gone = true;
           }
         }
@@ -9419,7 +9592,19 @@ function stepBeings(dt){
       /* Back from the void, but not just yet. */
       if (b.voidT > 0){ b.voidT -= dt; continue; }
       /* Off the premises. Comes back in when its hours start again. */
+      if (b.carComing && b.carComing.done) b.carComing = null;
+      if (b.carComing) continue;                  // on the way in, in the car
       if (want && Math.random() < dt * 0.35){
+        /* The Manager and Trolleyboy DRIVE in now, and park out of the way.
+           Walking in from the gate stays as the fallback if no car can get in
+           for a couple of minutes, and in the test rig. */
+        if (b.kind === 'manager' && b.res && !CENSUS.mute &&
+            (b.carTries || 0) < 120){
+          const sc = spawnStaffCar(b.res, b);
+          if (sc){ b.carComing = sc; b.carTries = 0; }
+          else b.carTries = (b.carTries || 0) + 1;
+          continue;
+        }
         b.away = false; b.leaving = false; b.arriving = true;
         b.x = g[0] - 3; b.y = g[1] + (Math.random() - 0.5) * 3;
         b.hold = 0; b.carry = null;
@@ -9460,11 +9645,25 @@ function stepBeings(dt){
          is the difference between the two. */
       const own = b.ownBay || b.toCar;
       if (own && own.car){
-        b.tx = own.x + own.toAisle * 1.4; b.ty = own.y;
+        /* Out in the aisle beside it (bayStand), and in on NEAR CONTACT - the
+           same fix the shoppers got. This aimed at own.x + toAisle * 1.4,
+           which puts the offset along the row, into the next bay, and waited
+           to arrive exactly; so the Manager and Trolleyboy spent every night
+           'leaving' and never reached their cars. */
+        const st = bayStand(own), bx = WORLD.boxes[own.box];
+        b.tx = st[0]; b.ty = st[1];
         b.state = b.look;
-        if (walkTo(b, dt, b.k.speed * 1.2)){
-          if (roomToLeave()){ beginDeparture(own); b.away = true; b.leaving = false; }
-          else b.hold = 2;        // no room on the aisle yet, wait a moment
+        const near = bx && Math.hypot(bx.x - b.x, bx.y - b.y) < 3.6;
+        if (near || walkTo(b, dt, b.k.speed * 1.2)){
+          if (near && roomToLeave()){
+            beginDeparture(own); b.away = true; b.leaving = false;
+            /* The space is not theirs once they have driven out of it; holding
+               on to it credited whoever parked there next to them, and that car
+               was then never picked to leave. */
+            if (b.ownBay === own) b.ownBay = null;
+            if (b.toCar === own) b.toCar = null;
+          }
+          else b.hold = 2;        // not quite there, or no room on the aisle yet
         }
         continue;
       }
@@ -9565,6 +9764,17 @@ function seedCast(){
   put('trolleyboy', 1, 8);
   put('manager', 1, 8);
   put('fox', 2, 4);
+  /* The night manager. Made AFTER the seeded draws, at a fixed spot by the
+     doors, so adding him moves nobody else; he is off shift at opening and is
+     sent home below like anyone whose hours have not started. */
+  {
+    /* Handed his own resident as he is made, so he is Gordon, not Derek. */
+    const nr = TOWN.find(function(r){ return r.kind === 'manager' && r.night; });
+    const b = addBeing('manager', X1 - 20, Y0 + WALK_W + PRIME_W + 2, nr);
+    b.night = true;
+    /* Less enthusiastic: a fifth slower about everything on foot. */
+    b.k = Object.assign({}, KINDS.manager, { speed:KINDS.manager.speed * 0.8 });
+  }
   /* Opening state, and it is a snapshot of lives in progress rather than a crowd
      waiting to be told what to do. Most of them drove - the grannies especially,
      because a Tesco Extra off a dual carriageway is not somewhere you stroll to -
@@ -9617,6 +9827,22 @@ function seedCast(){
    it was; there the old fallback still covers it. */
 function seedOwners(){
   if (CENSUS.mute) return;
+  /* The Manager and Trolleyboy, if on shift, came in their own cars: a
+     long-stay one out of the way is theirs. */
+  for (const sb of BEINGS){
+    if (sb.kind !== 'manager' || sb.away || !sb.res) continue;      // Kyle has no car
+    let best = null;
+    for (const bay of BAYS){
+      if (!bay.car || !bay.longStay || !bay.car.veh || ownerOfBay(bay)) continue;
+      if (!best || bay.want < best.want) best = bay;
+    }
+    if (!best) continue;
+    sb.ownBay = best; sb.parkedAt = bayStand(best);
+    sb.carSprite = best.car.veh.sprite;
+    best.ownerCid = sb.cid;
+    best.car.veh.ownerRid = sb.res.rid; best.car.veh.ownerPid = sb.pid;
+    sb.res.car = { vid:best.car.veh.vid, sprite:best.car.veh.sprite };
+  }
   for (const bay of BAYS){
     if (!bay.car || !bay.car.veh) continue;
     if (ownerOfBay(bay) || offMapOwner(bay)) continue;
@@ -10517,6 +10743,15 @@ function thoughtOf(b){
   }
   if (b.kind === 'fox') return pickLine(b, ['bins', 'the bins are this way',
                                             'nobody here but me']);
+  if (b.kind === 'manager' && b.night){
+    if (HELP.length) return liveBeing('trolleyboy') ? 'somebody else can get that'
+                                                    : 'nobody to radio. it\'s just me.';
+    if (LORRY.on) return pickLine(b, ['another lorry. brilliant.', 'sign here, sign there']);
+    if (beingNear(b, ['fox'], 12)) return 'evening, fox';
+    if (Math.hypot(car.x - b.x, car.y - b.y) < 16) return 'not tonight. please.';
+    return pickLine(b, ['not my problem till six', 'is it six yet', 'i could be asleep',
+                        'tea break. it is always tea break.']);
+  }
   if (b.kind === 'manager'){
     if (HELP.length) return 'where is that boy';
     if (beingNear(b, ['gull'], 12)) return 'those bloody gulls';
@@ -10528,10 +10763,15 @@ function thoughtOf(b){
                       '. two rows over. obviously.';
     if (b.carry) return 'that\'s another one';
     if (b.state === 'smoking' || b.hold > 0) return 'five minutes';
+    if (isNight()) return pickLine(b, ['is it still today', 'they said this was temporary',
+                                       "what's a weekend"]);
     return pickLine(b, ['trolleys', 'forty-one trolleys',
                         'somebody has put one in the hedge again']);
   }
   const gran = b.kind === 'granny';
+  if (b.toWork) return pickLine(b, ['clocking on', 'early shift. again.', 'right. tills.']);
+  if (b.staff && (b.life === 'toCar' || b.life === 'outDoors'))
+    return pickLine(b, ['end of shift. finally.', 'home, feet up', 'never again. see you tomorrow.']);
   switch (b.life){
     case 'arriving':  return gran ? 'right then' : 'in and out, that\'s the plan';
     case 'toDoors':   return gran ? pickLine(b, ['milk, bread, and a wee look at the cakes',
