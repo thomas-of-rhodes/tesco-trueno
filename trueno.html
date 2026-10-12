@@ -600,6 +600,281 @@ function bayCounts(){
 }
 
 const TRAF = { inQ:0, outQ:0, arrived:0, left:0, turnedAway:0 };
+
+/* ================================================================ the census =
+   Who everybody is, and where. Thomas, 2026-10-12: "if there is a car there, it
+   should be connected to a person who is either in the shop, in the Tay, or
+   using Tesco's three hours free and gone for a wander."
+   This block is step 1 and it only MEASURES. Nothing here changes what anybody
+   does; it names them, numbers them, and counts what does not add up.
+
+   Two identity spaces, kept apart from `cid` (which stays what it always was, a
+   drawing and thought-line id):
+     pid  one per PERSON or animal, never reused, kind is a field below it
+     vid  one per VEHICLE, and the record follows the
+          car through parking, lifting, departing and the Tay - a parked car
+          used to have no identity at all beyond the bay it was in.
+
+   THE TOWN. People are not generated, they are drawn from a fixed roster of
+   residents built once from a fixed seed, with names unique by construction.
+   That is what lets history mean anything: the same Moira Robertson comes back
+   on Tuesday, and a learned brain has somewhere permanent to live. Step 1 only
+   names people from it; drawing ARRIVALS from it comes in step 2/3.
+
+   Names: National Records of Scotland figures, Scotland-wide (nobody publishes
+   Dundee's own). Surnames are the NRS top twenty for 1999-2001 plus five just
+   below. Grannies were born about 1950 (Mary and Margaret led; the rest of that
+   list is from general knowledge). Shoppers were born in the 1980s (NRS decade
+   leaders, filled out below the top dozen). */
+const NAMES = {
+  sur: ['Smith','Brown','Wilson','Campbell','Stewart','Thomson','Robertson',
+        'Anderson','MacDonald','Scott','Reid','Murray','Taylor','Clark','Ross',
+        'Watson','Morrison','Paterson','Young','Mitchell','Walker','Fraser',
+        'Miller','Henderson','Johnston'],
+  granny: ['Margaret','Mary','Elizabeth','Anne','Catherine','Helen','Janet',
+           'Isobel','Agnes','Christine','Patricia','Sandra','Jean','Irene','Moira',
+           'Linda','Elaine','Marion','Sheila','Rosemary','Alison','Evelyn',
+           'Maureen','Isabella','Doreen'],
+  her:  ['Laura','Claire','Nicola','Jennifer','Emma','Sarah','Lisa','Louise',
+         'Kirsty','Michelle','Fiona','Gemma','Lindsay','Amanda','Lynsey','Joanne',
+         'Karen','Stephanie','Hayley','Donna','Natalie','Leanne','Victoria',
+         'Rachel','Jillian'],
+  him:  ['David','Christopher','Andrew','John','James','Michael','Steven','Paul',
+         'Mark','Scott','Craig','Ross','Kevin','Stuart','Gary','Graeme','Darren',
+         'Jamie','Ryan','Martin','Thomas','Barry','Euan','Neil','Gordon']
+};
+/* Its own generator, so building the town never draws from the world's seeded
+   stream - the car park must come out byte-identical with or without a census. */
+function townRng(seed){
+  let sd = seed;
+  return function(){ sd = (sd * 1103515245 + 12345) & 0x7fffffff; return sd / 0x7fffffff; };
+}
+const TOWN = (function(){
+  const r = townRng(1950198);
+  const used = {};
+  const out = [];
+  let rid = 0;
+  const add = function(kind, firsts, sex, n){
+    for (let i = 0; i < n; i++){
+      let nm = null;
+      for (let k = 0; k < 200 && !nm; k++){
+        const f = firsts[Math.floor(r() * firsts.length)];
+        const l = NAMES.sur[Math.floor(r() * NAMES.sur.length)];
+        if (!used[f + ' ' + l]){ nm = [f, l]; used[f + ' ' + l] = 1; }
+      }
+      if (!nm) continue;
+      out.push({ rid:rid++, kind:kind, sex:sex, first:nm[0], last:nm[1],
+                 name:nm[0] + ' ' + nm[1], being:null, car:null, visits:[] });
+    }
+  };
+  add('granny',  NAMES.granny, 'f', 160);
+  add('shopper', NAMES.her,    'f', 120);
+  add('shopper', NAMES.him,    'm', 120);
+  /* The staff are residents with a job. Fixed, so they are the same two men on
+     every load; Thomas can rename them. */
+  out.push({ rid:rid++, kind:'manager',    sex:'m', first:'Derek', last:'Paterson',
+             name:'Derek Paterson', being:null, car:null, visits:[] });
+  out.push({ rid:rid++, kind:'trolleyboy', sex:'m', first:'Kyle',  last:'Reid',
+             name:'Kyle Reid', being:null, car:null, visits:[] });
+  return out;
+})();
+/* Hand a new being a resident of its kind who is not already on site. "On
+   site" is checked against BEINGS itself rather than trusted from a flag,
+   because the test rig empties and restores BEINGS wholesale and would leave
+   claims behind that nothing ever releases. */
+function claimResident(b){
+  const free = [];
+  for (const r of TOWN){
+    if (r.kind !== b.kind) continue;
+    if (r.being && !r.being.gone && BEINGS.indexOf(r.being) >= 0) continue;
+    free.push(r);
+  }
+  if (!free.length) return null;
+  const r = free[Math.floor(Math.random() * free.length)];
+  r.being = b;
+  return r;
+}
+
+let PID = 0, VID = 0;
+const VEH = [];                       // every vehicle that has ever existed
+function newVeh(model){
+  const v = { vid:VID++, sprite:model ? model.sprite : '?',
+              ownerPid:null, bay:null, fate:null, born:simClockNow() };
+  VEH.push(v);
+  return v;
+}
+/* No number plates (Thomas: too in-depth). A car is described by whose it is. */
+function vehName(v){
+  const o = v.ownerPid !== null ? PEOPLE[v.ownerPid] : null;
+  return o ? o.name + "'s " + v.sprite : v.sprite + ' #' + v.vid;
+}
+function simClockNow(){ return typeof simClock === 'number' ? simClock : 0; }
+/* What the census found, kept as running tallies rather than recomputed,
+   because a car that VANISHED is only visible at the moment it goes. */
+const CENSUS = { mute:false, t:0, last:null, samples:0,
+                 ev:{ carsExited:0, carsVanished:0, carsVoid:0, carsParked:0,
+                      inventedDrivers:0,
+                      peopleWalked:0, peopleBus:0, peopleDrove:0, peopleVoid:0,
+                      peopleVanished:0 },
+                 worst:{ orphanCars:0, carlessDrivers:0 },
+                 log:[] };
+const PEOPLE = {};                    // pid -> the person's record, kept after they go
+function censusNote(kind, what){
+  if (CENSUS.mute) return;
+  CENSUS.log.push([+simClockNow().toFixed(1), kind, what]);
+  if (CENSUS.log.length > 400) CENSUS.log.shift();
+}
+/* A car has left CARS. Either it parked (its record is now in a bay), it went
+   out through the gate, it went over the edge, or it simply stopped existing
+   in the middle of the car park - which is the popping Thomas ruled out, and
+   the thing this exists to count. Judged by WHERE it was, not by which counter
+   the code happened to bump: one exit path counts a failed route as 'left'. */
+function censusCarDone(c){
+  if (CENSUS.mute || !c.veh) return;
+  const v = c.veh;
+  if (v.bay && v.bay.car && v.bay.car.veh === v){ CENSUS.ev.carsParked++; return; }
+  if (v.fate === 'void'){ CENSUS.ev.carsVoid++; return; }
+  const g = gateSpot();
+  if (c.x < g[0] + 8){
+    v.fate = 'exited'; CENSUS.ev.carsExited++;
+    if (v.ownerPid !== null && PEOPLE[v.ownerPid]) closeVisit(PEOPLE[v.ownerPid], 'drove');
+    return;
+  }
+  v.fate = 'vanished'; CENSUS.ev.carsVanished++;
+  censusNote('car vanished', vehName(v) + ' state ' + c.state +
+             ' at ' + c.x.toFixed(0) + ',' + c.y.toFixed(0));
+}
+function closeVisit(rec, how){
+  const vis = rec.visits[rec.visits.length - 1];
+  if (vis && vis.out === null){ vis.out = +simClockNow().toFixed(1); vis.fate = how; }
+  for (const b of BEINGS) if (b.pid === rec.pid && vis && !vis.by) vis.by = b.arrivedBy;
+}
+/* A being is being reaped. Record how they went. */
+function censusBeingOut(b){
+  if (CENSUS.mute || !hasLife(b)) return;
+  const rec = PEOPLE[b.pid];
+  let how;
+  if (b.voidHow) how = b.voidHow;
+  else if (b.drove) how = 'drove';
+  else if (b.life === 'toExit') how = (b.x < gateSpot()[0] + 8) ? 'walked' : 'bus';
+  else how = 'vanished';
+  if (how === 'walked') CENSUS.ev.peopleWalked++;
+  else if (how === 'bus') CENSUS.ev.peopleBus++;
+  else if (how === 'drove') CENSUS.ev.peopleDrove++;
+  else if (how === 'vanished'){
+    CENSUS.ev.peopleVanished++;
+    censusNote('person vanished', (b.name || b.pid) + ' life ' + b.life);
+  }
+  else CENSUS.ev.peopleVoid++;
+  /* Somebody who got into their car has not left - they are in it. Their visit
+     closes when the CAR goes out of the gate. */
+  if (rec && how !== 'drove') closeVisit(rec, how);
+}
+function ownerOfBay(bay){
+  for (const o of BEINGS){
+    if (o.gone) continue;
+    if (o.ownBay === bay || (bay.ownerCid && o.cid === bay.ownerCid)) return o;
+  }
+  return null;
+}
+function whereIs(b){
+  if (b.gone) return 'gone';
+  if (b.voidHow || b.swim || b.abyss) return 'tay/void';
+  if (b.inStore || b.life === 'inStore') return 'shop';
+  if (b.away) return 'away';
+  return 'car park';
+}
+const LOST = ['muddled','hunting','seekHelp','waitHelp','following'];
+/* The snapshot. Every parked car must lead to a person, and every person who
+   came by car must lead to a car. Anything that does not is listed. */
+function census(){
+  const out = { t:+simClockNow().toFixed(1),
+    cars:{ parked:0, ownerShop:0, ownerCarPark:0, ownerAway:0, ownerTay:0,
+           orphanLong:0, orphanShort:0,
+           arrivingNoPerson:0, leavingWithDriver:0, leavingNoDriver:0,
+           lifted:0, other:0 },
+    people:{ shop:0, carPark:0, away:0, tay:0,
+             byCar:0, byFoot:0, byBus:0, lost:0, carless:0 },
+    staff:{ onSite:0, inShop:0, away:0, withCar:0 },
+    orphans:[], carless:[] };
+  for (const bay of BAYS){
+    if (!bay.car) continue;
+    out.cars.parked++;
+    const o = ownerOfBay(bay);
+    if (!o){
+      if (bay.longStay) out.cars.orphanLong++; else out.cars.orphanShort++;
+      if (out.orphans.length < 60)
+        out.orphans.push((bay.car.veh ? vehName(bay.car.veh) : '?') +
+                         (bay.longStay ? ' long-stay' : '') +
+                         (bay.leaving ? ' leaving' : ''));
+      continue;
+    }
+    const w = whereIs(o);
+    if (w === 'shop') out.cars.ownerShop++;
+    else if (w === 'away') out.cars.ownerAway++;
+    else if (w === 'tay/void') out.cars.ownerTay++;
+    else out.cars.ownerCarPark++;
+  }
+  for (const c of CARS){
+    if (c.done) continue;
+    if (c.state === 'idle' || c.repark || c.held || c.airborne) out.cars.lifted++;
+    else if (c.state === 'in') out.cars.arrivingNoPerson++;
+    else if (c.state === 'out' || c.state === 'go'){
+      if (c.veh && c.veh.ownerPid !== null) out.cars.leavingWithDriver++;
+      else out.cars.leavingNoDriver++;
+    }
+    else out.cars.other++;
+  }
+  for (const b of BEINGS){
+    if (b.gone) continue;
+    if (b.kind === 'manager' || b.kind === 'trolleyboy'){
+      if (b.away) out.staff.away++;
+      else { out.staff.onSite++; if (b.inStore) out.staff.inShop++; }
+      if (b.ownBay && b.ownBay.car) out.staff.withCar++;
+      continue;
+    }
+    if (!hasLife(b)) continue;
+    const w = whereIs(b);
+    if (w === 'shop') out.people.shop++;
+    else if (w === 'away') out.people.away++;
+    else if (w === 'tay/void') out.people.tay++;
+    else out.people.carPark++;
+    if (b.arrivedBy === 'car') out.people.byCar++;
+    else if (b.arrivedBy === 'bus') out.people.byBus++;
+    else out.people.byFoot++;
+    if (LOST.indexOf(b.life) >= 0) out.people.lost++;
+    if (b.arrivedBy === 'car' && LOST.indexOf(b.life) < 0 && !b.carVoid){
+      let has = !!(b.ownBay && b.ownBay.car);
+      if (!has) for (const bay of BAYS) if (bay.car && bay.ownerCid === b.cid){ has = true; break; }
+      if (!has) for (const c of CARS) if (!c.done && c.ownerCid === b.cid){ has = true; break; }
+      if (!has){
+        out.people.carless++;
+        if (out.carless.length < 30) out.carless.push((b.name || b.pid) + ' (' + b.life + ')');
+      }
+    }
+  }
+  return out;
+}
+function stepCensus(dt){
+  if (CENSUS.mute) return;
+  CENSUS.t += dt;
+  if (CENSUS.t < 1) return;
+  CENSUS.t = 0;
+  const c = census();
+  CENSUS.last = c; CENSUS.samples++;
+  const oc = c.cars.orphanLong + c.cars.orphanShort;
+  if (oc > CENSUS.worst.orphanCars) CENSUS.worst.orphanCars = oc;
+  if (c.people.carless > CENSUS.worst.carlessDrivers) CENSUS.worst.carlessDrivers = c.people.carless;
+}
+/* For the console: `__census()` is the snapshot plus the running tallies. */
+window.__census = function(){
+  return { now:census(), events:CENSUS.ev, worst:CENSUS.worst, samples:CENSUS.samples,
+           log:CENSUS.log.slice(-40) };
+};
+window.__person = function(q){
+  for (const k in PEOPLE){ const r = PEOPLE[k]; if (r.name === q || r.pid === q) return r; }
+  return null;
+};
 /* How many can be moving at once. Seven starved the departures: arrivals filled
    every slot, beginDeparture could never find one, and a day came out 23 in
    against 5 out. The last few slots are held back for cars trying to LEAVE,
@@ -760,8 +1035,8 @@ function pickModel(){
        : r < 0.94 ? NPC_MODELS[2] : NPC_MODELS[3];
 }
 
-function makeNpc(model, x, y, h, state){
-  const c = { model:model, x:x, y:y, h:h, spd:0, state:state, bay:null,
+function makeNpc(model, x, y, h, state, veh){
+  const c = { model:model, veh:veh || newVeh(model), x:x, y:y, h:h, spd:0, state:state, bay:null,
               path:null, at:0, t:0, wait:0, blocked:0, cid:'n' + (CID++),
               box:{ x:x, y:y, hl:model.l / 2, hw:model.w / 2, a:h,
                     c:Math.cos(-h), s:Math.sin(-h), kind:'car' } };
@@ -851,6 +1126,11 @@ function spawnDeparture(){
      driver turns up for it the old way. They still get a life, so they behave
      like everybody else from here on. */
   const owner = addBeing('shopper', best.x + best.toAisle * 1.2, best.y);
+  /* The census counts every one of these: a person who appeared beside a car
+     with no visit behind them. Step 2 removes the need for them. */
+  CENSUS.ev.inventedDrivers += CENSUS.mute ? 0 : 1;
+  censusNote('invented driver', owner.name + ' for ' + (best.car && best.car.veh ? vehName(best.car.veh) : '?'));
+  if (best.car && best.car.veh) best.car.veh.ownerPid = owner.pid;
   owner.spawned = true;
   owner.ownBay = best;
   owner.arrivedBy = 'car';
@@ -863,10 +1143,15 @@ function spawnDeparture(){
 /* Called by the being behaviour once its owner reaches the car. */
 function beginDeparture(bay){
   const model = bay.car ? bay.car.model : pickModel();
+  const veh = bay.car ? bay.car.veh : null;
+  /* Whoever is getting in is now IN the car, as far as the census goes - their
+     visit stays open until the car is out of the gate. */
+  const drv = ownerOfBay(bay);
+  if (drv){ drv.drove = true; if (veh) veh.ownerPid = drv.pid; }
   emptyBay(bay);
   bay.leaving = false; bay.leaveBy = undefined; bay.claimed = false;
   bay.longStay = false;
-  const c = makeNpc(model, bay.x, bay.y, bay.h, 'out');
+  const c = makeNpc(model, bay.x, bay.y, bay.h, 'out', veh);
   c.bay = bay;
   syncNpc(c);
   return c;
@@ -1075,7 +1360,7 @@ function stepNpc(c, dt){
     if (settled) c.settle = (c.settle || 0) + dt; else c.settle = 0;
     if (c.linedUp && (dBay < 0.9 || c.settle > 0.9)){
       parkInBay(c.bay, c.model, Math.random, null,
-                c.settle > 0.9 ? { x:c.x, y:c.y, a:c.h } : null);
+                c.settle > 0.9 ? { x:c.x, y:c.y, a:c.h } : null, c.veh);
       c.bay.claimed = false;
       /* And out gets a shopper - who GOES INTO THE SHOP. Leaving that step out
          was the single worst bug in this session and the only one a screenshot
@@ -1103,6 +1388,7 @@ function stepNpc(c, dt){
          person remembers and what they will walk back to. */
       w.parkedAt = bayStand(c.bay);
       c.bay.ownerCid = w.cid;
+      if (c.veh){ c.veh.ownerPid = w.pid; if (w.res) w.res.car = { vid:c.veh.vid, sprite:c.veh.sprite }; }
       c.done = true;
       TRAF.arrived++;
       return;
@@ -1501,7 +1787,7 @@ function stepNpc(c, dt){
        from the middle of an aisle is exactly the popping this was built to
        stop. */
     if (c.bay){
-      if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random);
+      if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
       c.bay.claimed = false; c.bay.leaving = false;
     }
     c.done = true;
@@ -1649,7 +1935,7 @@ function stepNpcRoll(c, dt){
         if (c.fromBay && bay !== c.fromBay){
           c.fromBay.claimed = false; c.fromBay.leaving = false;
         }
-        parkInBay(bay, c.model, Math.random, null, { x:c.x, y:c.y, a:c.h });
+        parkInBay(bay, c.model, Math.random, null, { x:c.x, y:c.y, a:c.h }, c.veh);
         bay.claimed = false;
         bay.ownerCid = c.ownerCid || null;    // still hers, wherever it now is
       }
@@ -1692,14 +1978,15 @@ function stepCars(dt){
          the middle of an aisle - which is precisely the popping this whole
          system exists to abolish. */
       if (c.bay){
-        if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random);
+        if (c.state === 'out' || c.state === 'go') parkInBay(c.bay, c.model, Math.random, null, null, c.veh);
         c.bay.claimed = false; c.bay.leaving = false;
       }
       c.done = true;
       TRAF.nan = (TRAF.nan || 0) + 1;
     }
   }
-  for (let i = CARS.length - 1; i >= 0; i--) if (CARS[i].done) CARS.splice(i, 1);
+  for (let i = CARS.length - 1; i >= 0; i--)
+    if (CARS[i].done){ censusCarDone(CARS[i]); CARS.splice(i, 1); }
 }
 
 function npcParts(c){
@@ -2540,7 +2827,7 @@ let withLorry = true;
 
 /* Putting a car in a bay: switch its box on, size it to the vehicle, and give
    it the slightly-wrong placement people actually manage. */
-function parkInBay(bay, model, rnd, w, at){
+function parkInBay(bay, model, rnd, w, at, veh){
   const world = w || WORLD;
   const r = rnd || Math.random;
   /* Sloppiness scales with how little the driver cares. A Jazz is askew about a
@@ -2571,10 +2858,12 @@ function parkInBay(bay, model, rnd, w, at){
   b.hl = model.l / 2; b.hw = model.w / 2;
   b.a = a; b.c = Math.cos(-a); b.s = Math.sin(-a);
   b.off = false;
-  bay.car = { model:model, skew:skew, off:off, shy:shy };
+  bay.car = { model:model, skew:skew, off:off, shy:shy, veh:veh || newVeh(model) };
+  bay.car.veh.bay = bay;
   return bay;
 }
 function emptyBay(bay){
+  if (bay.car && bay.car.veh && bay.car.veh.bay === bay) bay.car.veh.bay = null;
   WORLD.boxes[bay.box].off = true;
   bay.car = null;
 }
@@ -4169,6 +4458,9 @@ function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
   if (WORLD.strays) seedTrolleys();
   const bSave = BEINGS.slice();
   const cSave2 = CARS.slice();
+  /* The rig builds and destroys whole worlds; none of it is the town's history. */
+  const censusMuteSave = CENSUS.mute;
+  CENSUS.mute = true;
   BEINGS.length = 0;
   CARS.length = 0;
   if (WORLD.strays) seedCast();
@@ -4240,6 +4532,7 @@ function driveSim(secs, sx, sy, sh, worldFn, todPin, wetPin){
   for (const c of cSave2) CARS.push(c);
   WORLD = wSave; visit = vSave; simClock = cSave; TOD = todSave;
   LORRY_PIN = lpSave; TRAFFIC_OFF = tfSave;
+  CENSUS.mute = censusMuteSave;
   for (const k in lorrySave) LORRY[k] = lorrySave[k];
   WX.wet = wxSave.wet; WX.rain = wxSave.rain;
   WX.spell = wxSave.spell; WX.next = wxSave.next;
@@ -5814,6 +6107,7 @@ function clearSwim(o){
    which is the point. */
 function consignCar(c){
   c.done = true;
+  if (c.veh) c.veh.fate = 'void';
   clearSwim(c);
   VOID.cars++;
   if (c.repark && c.fromBay){ c.fromBay.claimed = false; c.fromBay.leaving = false; }
@@ -6315,6 +6609,7 @@ function nearestFreeBay(x, y, within){
 
 function liftParked(bay){
   const model = bay.car ? bay.car.model : pickModel();
+  const veh = bay.car ? bay.car.veh : null;
   /* Whose it is, carried with the car. Without this a lost driver had nothing to
      recognise her own car BY: matching on the model alone meant the first Jazz
      she walked past was close enough, so she drove off in a stranger's car
@@ -6331,7 +6626,7 @@ function liftParked(bay){
      not where its bay is. */
   const bx = WORLD.boxes[bay.box];
   const c = makeNpc(model, bx ? bx.x : bay.x, bx ? bx.y : bay.y,
-                    bx ? bx.a : bay.h, 'idle');
+                    bx ? bx.a : bay.h, 'idle', veh);
   c.bay = bay; c.fromBay = bay; c.repark = true;
   c.ownerCid = bay.ownerCid || (owner ? owner.cid : null);
   if (owner) owner.ownBay = null;        // she does not know where it has gone
@@ -7713,8 +8008,19 @@ function addBeing(kind, x, y){
               guide:null, job:null,
               wp:null, wi:0, rtT:0, rtGoal:null, side:0, sideT:0,
               bank:0, roll:0, whim:0, whimT:0,
-              t:0, cid:'b' + (CID++),
+              t:0, cid:'b' + (CID++), pid:PID++,
               tx:x, ty:y, hold:0, carry:null, inStore:false, fed:0 };
+  /* A name. People come from the town; animals get a number, and keep it. */
+  const res = (hasLife(b) || kind === 'manager' || kind === 'trolleyboy')
+            ? claimResident(b) : null;
+  b.res = res;
+  b.name = res ? res.name : (kind + ' ' + b.pid);
+  if (!CENSUS.mute && hasLife(b)){
+    const rec = { pid:b.pid, name:b.name, kind:kind, rid:res ? res.rid : null,
+                  visits:[{ in:+simClockNow().toFixed(1), out:null, fate:null, by:null }] };
+    PEOPLE[b.pid] = rec;
+    if (res) res.visits.push(rec.visits[0]);
+  }
   BEINGS.push(b);
   return b;
 }
@@ -8402,7 +8708,9 @@ function reapBeings(){
   for (let i = BEINGS.length - 1; i >= 0; i--){
     const b = BEINGS[i];
     if (b.gone || (b.away && b.spawned && b.life === null &&
-                   b.ownBay === null && b.kind === 'shopper')) BEINGS.splice(i, 1);
+                   b.ownBay === null && b.kind === 'shopper')){
+      censusBeingOut(b); BEINGS.splice(i, 1);
+    }
   }
 }
 /* The radio call, and it lives OUTSIDE the Manager's behaviour on purpose. Put
@@ -8867,6 +9175,8 @@ function seedCast(){
         b.carSprite = mine.car.model ? mine.car.model.sprite : null;
         b.parkedAt = bayStand(mine);
         mine.ownerCid = b.cid;
+        if (mine.car.veh){ mine.car.veh.ownerPid = b.pid;
+          if (b.res) b.res.car = { vid:mine.car.veh.vid, sprite:mine.car.veh.sprite }; }
       } else b.arrivedBy = 'foot';
     } else b.arrivedBy = 'foot';
     if (rnd() < 0.6){
@@ -9875,8 +10185,13 @@ function drawThought(){
   if (HOVER.mx < 0) return;
   const who = castAt(HOVER.mx, HOVER.my);
   if (!who) return;
-  const txt = thoughtOf(who);
-  if (!txt) return;
+  const txt0 = thoughtOf(who);
+  if (!txt0) return;
+  /* Who is thinking it. A person by name, a car by whose it is. */
+  const tag = who === car ? 'Trueno'
+            : who.model ? (who.veh ? vehName(who.veh) : '')
+            : (who.name || '');
+  const txt = tag ? tag + ':  ' + txt0 : txt0;
   const q = P(who.x, who.y);
   const hz = (who === car) ? 1.3
            : who.model ? (who.z || 0) + (who.airborne || 0) + 1.5
@@ -9956,7 +10271,7 @@ function frame(t){
       stepCarFall(DT);
     }
     stepMovers(DT); stepBeings(DT); stepWeather(DT); washRubber(DT); stepRain(DT);
-    trafficStep(DT); stepCars(DT);
+    trafficStep(DT); stepCars(DT); stepCensus(DT);
     /* The same multiplier the clock itself gets. A lamp takes five minutes of
        ITS day to come up, so running the day at twenty times should not leave
        every lamp stuck at a quarter brightness all night. */
