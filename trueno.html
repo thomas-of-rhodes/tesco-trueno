@@ -681,8 +681,39 @@ const TOWN = (function(){
              name:'Derek Paterson', being:null, car:null, visits:[], visit:null });
   out.push({ rid:rid++, kind:'trolleyboy', sex:'m', first:'Kyle',  last:'Reid',
              name:'Kyle Reid', being:null, car:null, visits:[], visit:null });
+  /* Habits, from a generator of their own so the names above never move. Some
+     people use the free parking to go into town as a matter of course; most
+     only ever come for the shop. */
+  const hr = townRng(3600);
+  for (const r of out){
+    r.townish = (r.kind === 'shopper' && hr() < 0.30) || (r.kind === 'granny' && hr() < 0.15);
+  }
   return out;
 })();
+
+/* Tesco's three hours free. The clock runs 72x but people do not, so this is
+   in REAL seconds of the sim, not clock hours: a shop is 1.5-16 minutes here,
+   so a literal three clock-hours (150 s) would ticket nearly every shopper.
+   "Three hours" is what the warden's ticket will say. Agreed with Thomas
+   2026-10-12, with overstaying kept rare - about one wanderer in twenty. */
+const WANDER = {
+  limit: 1200,          // the free period, real seconds (20 min)
+  overstay: 0.05,       // chance a trip runs past it
+  tow: 1800             // step 6
+};
+function wanderStay(){
+  return Math.random() < WANDER.overstay
+       ? WANDER.limit + 60 + Math.random() * 500          // lost track of time
+       : 360 + Math.random() * 720;                       // 6 to 18 minutes
+}
+/* Whether somebody who has just parked goes into town rather than the shop.
+   Mostly the town people, mostly in the working day. Never in the test rig. */
+function wantsTown(r){
+  if (CENSUS.mute || !r || (r.kind !== 'shopper' && r.kind !== 'granny')) return false;
+  if (daylight() < 0.3) return false;
+  const day = (TOD > 0.33 && TOD < 0.70) ? 1 : 0.35;
+  return Math.random() < (r.townish ? 0.55 : 0.04) * day;
+}
 /* Hand a new being a resident of its kind who is not already on site. "On
    site" is checked against BEINGS itself rather than trusted from a flag,
    because the test rig empties and restores BEINGS wholesale and would leave
@@ -788,6 +819,12 @@ function closeVisit(rec, how){
 function censusBeingOut(b){
   if (CENSUS.mute || !hasLife(b)) return;
   const rec = PEOPLE[b.pid];
+  if (b.toTown && b.res && b.res.visit && b.res.visit.out === null){
+    const v = b.res.visit, stay = wanderStay();
+    v.where = 'town'; v.left = simClockNow(); v.due = simClockNow() + stay; v.over = false;
+    CENSUS.ev.toTown = (CENSUS.ev.toTown || 0) + 1;
+    return;
+  }
   let how;
   if (b.voidHow) how = b.voidHow;
   else if (b.drove) how = 'drove';
@@ -909,11 +946,53 @@ function stepCensus(dt){
   CENSUS.t += dt;
   if (CENSUS.t < 1) return;
   CENSUS.t = 0;
+  stepTown();
   const c = census();
   CENSUS.last = c; CENSUS.samples++;
   const oc = c.cars.orphanLong + c.cars.orphanShort;
   if (oc > CENSUS.worst.orphanCars) CENSUS.worst.orphanCars = oc;
   if (c.people.carless > CENSUS.worst.carlessDrivers) CENSUS.worst.carlessDrivers = c.people.carless;
+}
+/* Once a second: anybody in town who is due back walks in at the gate, the
+   same person, to the same car. Overstays are counted here (step 6 tickets
+   them). */
+function stepTown(){
+  for (const r of TOWN){
+    const v = r.visit;
+    if (!v || v.out !== null || v.where !== 'town') continue;
+    if (!v.over && simClockNow() - v.left > WANDER.limit){
+      v.over = true;
+      CENSUS.ev.overstays = (CENSUS.ev.overstays || 0) + 1;
+    }
+    if (simClockNow() >= v.due && KINDS[r.kind]) comeBack(r);
+  }
+}
+function comeBack(r){
+  const v = r.visit;
+  let veh = null;
+  for (const e of VEH) if (e.ownerRid === r.rid && !e.fate){ veh = e; }
+  const bay = veh && veh.bay && veh.bay.car && veh.bay.car.veh === veh ? veh.bay : null;
+  const g = gateSpot();
+  const b = addBeing(r.kind, g[0] - 2, g[1] + (Math.random() - 0.5) * 3, r);
+  b.spawned = true;
+  b.arrivedBy = 'car';
+  b.fromTown = true;
+  b.inStore = false;
+  if (bay){
+    b.ownBay = bay;
+    b.parkedAt = bayStand(bay);
+    b.carSprite = veh.sprite;
+    bay.ownerCid = b.cid;
+    veh.ownerPid = b.pid;
+  } else {
+    /* Not where they left it - towed, lifted, in the Tay. They go and look
+       anyway, and the lost-car chain takes it from there. */
+    b.ownBay = null; b.carVoid = true;
+    b.parkedAt = v.bay ? bayStand(v.bay) : [g[0] + 20, g[1]];
+  }
+  /* A few call in for a pint of milk on the way back. */
+  b.life = Math.random() < 0.25 ? 'toDoors' : 'toCar';
+  CENSUS.ev.backFromTown = (CENSUS.ev.backFromTown || 0) + 1;
 }
 /* For the console: `__census()` is the snapshot plus the running tallies. */
 window.__census = function(){
@@ -1151,7 +1230,7 @@ function spawnDeparture(){
     if (owned) continue;
     /* Staff at work are not leaving because the car park would like a space. */
     const offr = offMapOwner(b);
-    if (offr && offr.visit.where === 'work') continue;
+    if (offr && (offr.visit.where === 'work' || offr.visit.where === 'town')) continue;
     /* The far end goes first in the evening, the prime row clings on. */
     const sc = (1.6 - b.want) * (0.5 + Math.random());
     if (sc > bs){ bs = sc; best = b; }
@@ -1488,6 +1567,8 @@ function stepNpc(c, dt){
       c.bay.ownerCid = w.cid;
       if (c.veh){ c.veh.ownerPid = w.pid; c.veh.ownerRid = w.res ? w.res.rid : null;
         if (w.res){ w.res.car = { vid:c.veh.vid, sprite:c.veh.sprite }; if (w.res.visit) w.res.visit.by = 'car'; } }
+      /* Not everybody who parks here is here for Tesco. */
+      if (!again && wantsTown(w.res)) w.life = 'toTown';
       c.done = true;
       TRAF.arrived++;
       return;
@@ -9124,6 +9205,14 @@ function stepBeings(dt){
         else b.moving = false;
         continue;
       }
+      /* --- off into town, leaving the car where it is. The visit stays OPEN:
+         they are off the map, not gone, and they will be back for it. */
+      if (b.life === 'toTown'){
+        b.tx = g[0] - 2; b.ty = g[1];
+        b.state = b.look;
+        if (walkTo(b, dt, b.k.speed) || b.x < X0 + 4){ b.gone = true; b.toTown = true; }
+        continue;
+      }
       /* --- out through the entrance on foot, car or no car */
       if (b.life === 'toExit'){
         /* If there is a bus in, they get on it. Nobody walks past a bus they
@@ -9376,7 +9465,14 @@ function seedOwners(){
                : (jazz && Math.random() < 0.62) ? 'granny' : 'shopper';
     const r = freeResident(kind);
     if (!r) continue;
+    /* Some of the cars that are here before you are are town cars: their
+       owners are part way through a trip in, with the rest of it to come. */
+    const town = !bay.longStay && Math.random() < (r.townish ? 0.6 : 0.08);
     openVisit(r, bay.longStay ? 'work' : 'shop', 'car', bay);
+    if (town){
+      const stay = wanderStay(), done = Math.random() * stay * 0.8;
+      r.visit.where = 'town'; r.visit.left = -done; r.visit.due = stay - done; r.visit.over = false;
+    }
     bay.car.veh.ownerRid = r.rid;
     r.car = { vid:bay.car.veh.vid, sprite:bay.car.veh.sprite };
   }
@@ -10252,7 +10348,10 @@ function thoughtOf(b){
                                                  'i\'ll not be long'])
                                   : pickLine(b, ['milk. just milk.', 'i have a list']);
     case 'outDoors':  return 'that\'s that done';
-    case 'toCar':     return gran ? 'now then, where did i put it'
+    case 'toTown':    return gran ? pickLine(b, ['into town for a wee wander', 'the free parking, i\'ll not be long'])
+                                  : pickLine(b, ['three hours free. plenty.', 'nipping into town']);
+    case 'toCar':     if (b.fromTown) return pickLine(b, ['back for the car', 'that went quicker than i thought']);
+                      return gran ? 'now then, where did i put it'
                                   : pickLine(b, ['row D. or was it C.', 'this way, i think']);
     case 'muddled':   return pickLine(b, ['...this is where i left it',
                                           'i left it RIGHT here']);
