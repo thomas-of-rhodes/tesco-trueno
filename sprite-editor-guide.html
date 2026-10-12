@@ -90,23 +90,25 @@
 <div class="box">
 <p>Four lines, then you can ignore the rest of this.</p>
 <ol>
-  <li><b>export</b> is the only save. Nothing is stored anywhere — close the tab and it is all gone.</li>
-  <li><b>merge</b> adds a file to what you have. <b>import</b> deletes what you have first. Press import once, at the start, and never again.</li>
+  <li><b>open</b> a sprite file, work on it, press <b>save</b>. Save writes straight back into the file you opened. Nothing else is stored anywhere — close the tab without saving and the changes are gone.</li>
+  <li>One file at a time: <code>living.sprite.js</code> is the people and animals, <code>vehicles.sprite.js</code> is everything with wheels.</li>
   <li>Instant backup: press <b>text</b>, <code>Ctrl+A</code>, <code>Ctrl+C</code>, paste into a Google Doc. Four seconds.</li>
-  <li><b>export</b> again before you close the tab. Every time.</li>
+  <li><b>save</b> again before you close the tab. Every time.</li>
 </ol>
 <p style="font-weight:400;color:var(--dim);font-size:.92rem">The Chromebook restarts itself for updates without asking. That is how people lose an afternoon.</p>
 </div>
 
 <h2>Before you set out</h2>
-<p>Two files travel together:</p>
+<p>Three files travel together:</p>
 <ul>
   <li><code>sprite-editor.html</code> — the workshop</li>
-  <li><code>cast.sprite.txt</code> — the characters that already exist</li>
+  <li><code>sprites/living.sprite.js</code> — the people and animals: grannies, shoppers, Trolleyboy, the managers, the gulls, the fox, and the umbrellas they carry</li>
+  <li><code>sprites/vehicles.sprite.js</code> — everything with wheels: Trueno, the four kinds of car, the trolley, the bus, the recovery truck, the lorry, and the parking ticket</li>
 </ul>
-<p>Download both. They arrive in <b>My Files &gt; Downloads</b>.</p>
-<p>Open the <b>Files</b> app, make a folder in <b>Google Drive</b> called <code>trueno</code>, and drag both files into it.</p>
+<p>Download all three. They arrive in <b>My Files &gt; Downloads</b>.</p>
+<p>Open the <b>Files</b> app, make a folder in <b>Google Drive</b> called <code>trueno</code>, and drag them into it.</p>
 <p>Downloads is local storage. Nothing backs it up, and a powerwash empties it. Drive is safe ground. Work from Drive.</p>
+<p>Ignore the <code>.js</code> on the end of the sprite files. They are not programs; they are the same plain text as always, with one extra line round them so the game can load them straight from a folder. The editor takes that line off when you open the file and puts it back when you save.</p>
 
 <h2>Entering the workshop</h2>
 <p>In the <b>Files</b> app, right-click <code>sprite-editor.html</code> and choose <b>Open with &gt; Chrome</b>.</p>
@@ -115,19 +117,20 @@
 <p>It will be a black screen with an empty grid. That is right: the editor starts with nothing in it.</p>
 
 <h2>Loading the cast</h2>
-<p>Press <b>import</b>, pick <code>cast.sprite.txt</code> from your Drive folder, and eleven characters appear in the dropdown at the top left — Trueno, a seagull, a granny, a trolley, four cars and the rest.</p>
+<p>Press <b>open</b> and pick one of the two sprite files from your Drive folder. Its characters appear in the dropdown at the top left — open <code>living.sprite.js</code> and you get the grannies, shoppers, staff, gulls and the fox; open <code>vehicles.sprite.js</code> and you get Trueno, the cars, the bus, the truck and the rest.</p>
+<p>Chrome may ask whether the editor can see and save the file. Say yes — that is what lets <b>save</b> write straight back into it.</p>
 <p>Drag the background to spin the view, scroll to zoom, and press <b>fit</b> if something goes off screen.</p>
-<p>Worth knowing what that file actually is: plain text you could open in any editor. One line per box, like this:</p>
-<pre><code>box 0.42 0 0.55  1.9 0.62 0.28  #d94f3a  n=bonnet top=#e8e8e8</code></pre>
+<p>Worth knowing what the file actually is: plain text you could open in any editor. One line per box, like this:</p>
+<pre><code>box 0.42 0 0.55  1.9 0.62 0.28  paint  n=bonnet top=#e8e8e8</code></pre>
 <p>Position, then size, then colour, then optional extras. There is a full explanation of the format written into the top of the file as comments.</p>
-<p>This matters for one reason: <b>if the editor ever breaks, your work is still readable text.</b> Nothing is locked in a proprietary format.</p>
+<p>This matters for one reason: <b>if the editor ever breaks, your work is still readable text.</b> Nothing is locked in a proprietary format. (If you ever edit one by hand, only change what is between the two backtick <code>`</code> marks — the line above and below them is the wrapper the game needs.)</p>
 
 <h2>Building a character</h2>
 <p>Everything is made of boxes. No curves, no meshes — you are working in the same vocabulary as a Lego minifig, and the charm is in what you can imply with eight or ten blocks.</p>
 <p>The panels, left to right:</p>
 <ul>
   <li><b>sprite</b> — the character. <code>new</code>, <code>dup</code>, <code>rename</code>, <code>del</code>.</li>
-  <li><b>states</b> — poses, as tabs. The granny has standing, walking, driving and pushing. <code>dup</code> a state and nudge things for the next frame.</li>
+  <li><b>states</b> — versions of the character, as tabs. The granny has three looks — <code>hunched</code>, <code>rigid</code> and <code>round</code> — and each person in the game is given one and keeps it. <code>dup</code> a state and change it to make another.</li>
   <li><b>boxes</b> — the blocks in the current state.</li>
   <li><b>properties</b> — the selected box: position, size, rotation, colour.</li>
 </ul>
@@ -140,6 +143,15 @@
 <h3>Colour</h3>
 <p>Each box has a base colour, and each of its six faces can override it. Faces are named in the box's own frame (<code>fwd</code>, <code>aft</code>, <code>lft</code>, <code>rgt</code>, <code>top</code>, <code>bot</code>) so they stay correct when you rotate it. Alpha is a separate 0–100 box, and <code>none</code> makes a face invisible — which is how you make something hollow, like the inside of a trolley.</p>
 
+<h3>Named colours: paint, skin and hair</h3>
+<p>Some colours are not decided by the sprite at all. Every car in the game has its own paint, and every person their own skin and hair, chosen once and kept — so the same granny always turns up with the same grey hair in the same silver Jazz. To make a box take one of those, set <b>named</b> (under the colour picker) to <code>paint</code>, <code>skin</code> or <code>hair</code>.</p>
+<p>The number beside it is a <b>shade</b>: <code>1</code> is the colour as chosen, <code>0.75</code> is a quarter darker. The cars use that for their sills, so the sill is always a darker version of whatever colour the car is.</p>
+<p>The three <b>previews</b> swatches only change what you see while you work — try a red car, or a different skin tone, to check the sprite looks right in all of them. They are not saved.</p>
+<p>Which boxes should be named: on a car, the bodywork (<code>paint</code>), the sills (<code>paint</code> at 0.75). On a person, the head, neck and any bare arms (<code>skin</code>) and the hair (<code>hair</code>). Leave clothes, glass, tyres and lights as fixed colours.</p>
+
+<h3>Lights: lit</h3>
+<p>The <b>lit</b> field, from 0 to 1, makes a box glow: it keeps its colour at night instead of going dark with everything else. Headlights, tail lights, the bus's destination blind, the truck's beacons. Most boxes are <code>0</code>.</p>
+
 <h3>Three buttons that save you pain</h3>
 <ul>
   <li><b>no burying</b> is on by default. It stops you hiding a box completely inside another one, where it costs memory and shows nothing.</li>
@@ -148,32 +160,37 @@
 </ul>
 <p>The <code>mass</code> field is in kilograms, for the physics later. Rough is fine. Per-box weight and balance are worked out from the shapes, so they survive scaling.</p>
 
-<h2>Import, merge, export</h2>
-<p>Three buttons, bottom left. Two of them are safe and one of them will eat your afternoon.</p>
+<h3>Size, anchors and parts</h3>
+<p>The <b>size, anchors &amp; parts</b> panel on the left describes the whole character rather than one box.</p>
+<ul>
+  <li><b>size</b> is the footprint and height the game uses for the character — how much room it takes up, how tall it is. Press <b>from boxes</b> and it is measured for you; it shows as a dashed outline on the ground.</li>
+  <li><b>Anchors</b> are named points the game hangs things on: where the parking ticket goes on a car's roof (<code>ticket</code>), where a towed car sits on the truck (<code>bed</code>), where people get on the bus (<code>door</code>), where the lorry's trailer hooks on (<code>hitch</code>). They show as pink crosses with their names. <b>add anchor</b> puts a new one on top of the selected box; type its name and nudge the three numbers (forward, side, height). <b>The names matter</b> — the game looks them up by name, so a car without a <code>ticket</code> anchor gets its tickets in a guessed spot.</li>
+  <li><b>Parts</b> are groups of boxes that will one day move on their own — a gull's wings, an umbrella, the truck's tipping bed. Give a box a <b>part</b> name in the box panel on the right and it joins that part; the part's pivot shows as a blue ring and can be moved in the left panel. Nothing in the game moves parts yet, so this is for later.</li>
+</ul>
+
+<h2>Open, merge, save</h2>
+<p>The buttons along the top.</p>
 <div class="tw">
 <table>
   <tr><th>Button</th><th>What it does</th><th>Safe?</th></tr>
-  <tr><td><b>import</b></td><td>Throws away everything open and loads the file instead</td><td class="no">No. This is the dangerous one.</td></tr>
-  <tr><td><b>merge</b></td><td>Adds the file's characters alongside what you already have</td><td class="yes">Yes</td></tr>
-  <tr><td><b>export</b></td><td>Downloads everything currently open as one text file</td><td class="yes">Yes</td></tr>
+  <tr><td><b>open</b></td><td>Throws away everything in the editor and opens a sprite file instead</td><td class="no">Only if you have saved. This is the dangerous one.</td></tr>
+  <tr><td><b>merge</b></td><td>Adds another file's characters alongside what you already have</td><td class="yes">Yes</td></tr>
+  <tr><td><b>save</b></td><td>Writes everything straight back into the file you opened</td><td class="yes">Yes — that is the point of it</td></tr>
+  <tr><td><b>save as</b></td><td>Downloads a copy, without touching the file you opened</td><td class="yes">Yes</td></tr>
+  <tr><td><b>text</b></td><td>Shows everything as plain text, for copying out as a backup</td><td class="yes">Yes</td></tr>
 </table>
 </div>
 
 <h3>The trap</h3>
-<p><b><code>import</code> replaces. <code>merge</code> adds.</b></p>
-<p>If you have spent two hours on a fox, then press <b>import</b> to bring in Dad's latest cast file, the fox is gone. No warning, no undo prompt. It is the one mistake in this tool that actually costs you work.</p>
-<p>Use <b>import</b> once, at the start of a session, on an empty editor. After that, only ever use <b>merge</b>.</p>
+<p><b><code>open</code> replaces. <code>merge</code> adds.</b></p>
+<p>If you have spent two hours on a fox and then press <b>open</b> without saving, the fox is gone. No warning, no undo prompt. Save first, every time you open something else.</p>
+<p>And keep the two files apart: work on <code>living.sprite.js</code> <i>or</i> <code>vehicles.sprite.js</code>, not both at once. If you merge the cars into the people file and press save, the cars end up in the people file too — the game will still work, but Dad will have some untangling to do.</p>
 
 <h3>What merge does with clashing names</h3>
 <p>Nothing destructive. If you merge a file containing <code>gull</code> and you already have a <code>gull</code>, the incoming one becomes <code>gull-2</code>. Both survive and you rename whichever you prefer. Merge never overwrites a character.</p>
 
-<h3>Where exports land</h3>
-<p><b>export</b> always names the file <code>cast.sprite.txt</code>, every time. Chrome will not overwrite, so your Downloads folder fills up with <code>cast.sprite (1).txt</code>, <code>cast.sprite (2).txt</code> and so on — and the highest number is your newest work, which is a horrible way to find anything.</p>
-<p>Two things fix this:</p>
-<ol>
-  <li>In Chrome, go to <b>Settings &gt; Downloads</b> and change <b>Location</b> to your <code>trueno</code> folder in Google Drive. Now exports save straight to Drive instead of local storage.</li>
-  <li>Rename each export as soon as it lands: <code>fox-v3.txt</code>, <code>cat-sitting-pose.txt</code>. Whatever means something to you.</li>
-</ol>
+<h3>When save downloads instead</h3>
+<p>On a Chromebook in Chrome, <b>save</b> writes back into the file you opened (the first time, Chrome asks if that is all right — say yes). If you opened the file some other way, or the browser does not allow it, <b>save</b> downloads a copy instead, named after the file. Chrome will not overwrite a download, so you get <code>living.sprite (1).js</code> and so on. If that happens: put the newest one in your <code>trueno</code> folder, rename it back to exactly <code>living.sprite.js</code> (or <code>vehicles.sprite.js</code>), and open it from there next time.</p>
 
 <h3>The instant save</h3>
 <p>The <b>text</b> button shows everything currently open as plain text. Click in it, <code>Ctrl+A</code>, <code>Ctrl+C</code>, and paste into a Google Doc or Keep note.</p>
@@ -182,10 +199,10 @@
 <h2>A routine that never loses anything</h2>
 <p>Four habits. They take about ten seconds each.</p>
 <ol>
-  <li><b>Start:</b> open the editor, <b>import</b> once.</li>
-  <li><b>Every finished character, and before anything experimental:</b> <b>export</b>, then rename the file.</li>
+  <li><b>Start:</b> open the editor, <b>open</b> the one sprite file you are working on.</li>
+  <li><b>Before anything experimental:</b> <b>save as</b>, so there is a copy from before. <b>Every finished character:</b> <b>save</b>.</li>
   <li><b>Every twenty minutes or so:</b> <b>text</b>, select all, copy, paste into one running Google Doc. Do not delete the old pastes — that Doc becomes your version history for free.</li>
-  <li><b>End:</b> <b>export</b> before you close the tab. Always. Even if you think you changed nothing.</li>
+  <li><b>End:</b> <b>save</b> before you close the tab. Always. Even if you think you changed nothing.</li>
 </ol>
 <p>The Chromebook restarting itself for an update is the thing that catches people. It does not ask.</p>
 
@@ -194,21 +211,24 @@
 <table>
   <tr><th>Problem</th><th>What to do</th></tr>
   <tr><td>Deleted the wrong box</td><td><code>Ctrl+Z</code>. It remembers the last 80 changes.</td></tr>
-  <tr><td>Pressed <b>import</b> and lost work</td><td>Nothing in the editor can help. Go to your Google Doc pastes or your exported files. This is the reason for step 3.</td></tr>
+  <tr><td>Pressed <b>open</b> and lost work</td><td>Nothing in the editor can help. Go to your Google Doc pastes or your <b>save as</b> copies. This is the reason for step 3.</td></tr>
+  <tr><td>Saved something you did not mean to</td><td>Open your last <b>save as</b> copy, or paste your latest Google Doc backup into the <b>text</b> panel and press <b>apply</b>, then <b>save</b>.</td></tr>
+  <tr><td>A car looks grey in the editor but is coloured in the game</td><td>That is right: its body is <code>paint</code>, and the editor shows the <b>previews</b> colour. Each car gets its own in the game.</td></tr>
+  <tr><td>A light does not glow at night</td><td>Give that box a <b>lit</b> value — 1 for a headlight, less for something dimmer.</td></tr>
   <tr><td>A character vanished after merging</td><td>Check the dropdown for <code>name-2</code>. It is almost certainly there under a new name.</td></tr>
   <tr><td>Something looks like it is floating</td><td><b>ground to z=0</b></td></tr>
   <tr><td>A box will not move where you want</td><td>Something is overlapping. Toggle <b>no burying</b> off, move it, toggle it back on.</td></tr>
   <tr><td>Whole thing is off screen</td><td><b>fit</b></td></tr>
-  <tr><td>Editor will not load a file</td><td>It only takes <code>.txt</code>, <code>.sprite</code> and <code>.text</code>. If Chrome renamed your export to <code>.txt.txt</code> or similar, rename it.</td></tr>
-  <tr><td>Tab closed and nothing was exported</td><td>It is gone. There is no cache to dig through. Sorry.</td></tr>
+  <tr><td>Editor will not load a file</td><td>It takes <code>.js</code>, <code>.txt</code> and <code>.sprite</code>. If Chrome renamed a download to something like <code>living.sprite (1).js</code>, rename it back.</td></tr>
+  <tr><td>Tab closed without saving</td><td>It is gone. There is no cache to dig through. Sorry.</td></tr>
 </table>
 </div>
 
 <h2>Sending work back</h2>
-<p>Export, rename to something like <code>yourname-cast-v2.txt</code>, and send that one file. Dad merges it into the main cast, so nothing of yours is overwritten and nothing of his is either.</p>
-<p>You can send several files or one big one — merge handles both. New characters do not need to relate to anything already in there. A car park is a broad church.</p>
+<p>Send the sprite file you worked on — <code>living.sprite.js</code> or <code>vehicles.sprite.js</code> — straight out of your <code>trueno</code> folder. If you would rather send just your new characters, <b>save as</b> a copy with a name like <code>yourname-fox.sprite.js</code> and send that; Dad merges it in, so nothing of yours is overwritten and nothing of his is either.</p>
+<p>New characters do not need to relate to anything already in there. A car park is a broad church. (If one needs to appear in the game as well as in the file, tell Dad its name — the game has to be told what a new character is for.)</p>
 
-<p class="end">Sprite format v1 · guide last updated 19 September 2026</p>
+<p class="end">Sprite format v2 · guide last updated 12 October 2026</p>
 
 </div>
 </body>
