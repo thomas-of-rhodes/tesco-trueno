@@ -462,11 +462,13 @@ function render(){
     const bx = WORLD.boxes[bay.box];
     const boxes = sp.states[sp.order[0]];
     const ch = Math.cos(bx.a), sh = Math.sin(bx.a);
+    const paint = bay.car.veh && bay.car.veh.paint;
     for (const q of boxes)
       items.push({ cid:'p' + bay.box, lit:0,
                    X:bx.x + q.f * ch - q.l * sh, Y:bx.y + q.f * sh + q.l * ch,
                    L:q.L, W:q.W, rot:bx.a + q.rot,
-                   z0:q.z, z1:q.z + q.H, col:q.col });
+                   z0:q.z, z1:q.z + q.H,
+                   col:(q.paint && paint) ? tint(paint, q.paintK) : q.col });
     /* Parking tickets, one yellow slip each, on the roof by the windscreen
        where the camera can see them. */
     /* At the car's own `ticket` anchor - a Miata's roof is not a Discovery's. */

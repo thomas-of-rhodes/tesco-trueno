@@ -1268,7 +1268,7 @@ function seedCast(){
         b.parkedAt = bayStand(mine);
         mine.ownerCid = b.cid;
         if (mine.car.veh){ mine.car.veh.ownerPid = b.pid; mine.car.veh.ownerRid = b.res ? b.res.rid : null;
-          if (b.res) b.res.car = { vid:mine.car.veh.vid, sprite:mine.car.veh.sprite }; }
+          if (b.res) b.res.car = carRecord(mine.car.veh); }
       } else b.arrivedBy = 'foot';
     } else b.arrivedBy = 'foot';
     if (rnd() < 0.6){
@@ -1309,7 +1309,7 @@ function seedOwners(){
     sb.carSprite = best.car.veh.sprite;
     best.ownerCid = sb.cid;
     best.car.veh.ownerRid = sb.res.rid; best.car.veh.ownerPid = sb.pid;
-    sb.res.car = { vid:best.car.veh.vid, sprite:best.car.veh.sprite };
+    sb.res.car = carRecord(best.car.veh);
   }
   for (const bay of BAYS){
     if (!bay.car || !bay.car.veh) continue;
@@ -1328,6 +1328,6 @@ function seedOwners(){
       r.visit.where = 'town'; r.visit.left = -done; r.visit.due = stay - done; r.visit.over = false;
     }
     bay.car.veh.ownerRid = r.rid;
-    r.car = { vid:bay.car.veh.vid, sprite:bay.car.veh.sprite };
+    r.car = carRecord(bay.car.veh);
   }
 }

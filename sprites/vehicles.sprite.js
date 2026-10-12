@@ -10,8 +10,9 @@
 # axes   f = along facing (+ forward), l = lateral (+ left), z = up. metres.
 # box    box <f> <l> <z>  <L> <W> <H>  <colour>  [flags]
 #          f,l are the box centre; z is its BASE. L is along f, W along l, H up.
-# colour #rrggbb | #rrggbbaa | none | paint
+# colour #rrggbb | #rrggbbaa | none | paint | paint:<k>
 #          paint: the vehicle's own colour, chosen per car and kept by its owner
+#          paint:0.75 is that colour darkened to 75% (sills, shadow lines)
 # flags  n=<label>          a name, for the editor list
 #        mir=1              also draw the mirror image at -l (swaps lft/rgt)
 #        rot=<radians>      extra yaw, added to the sprite heading
@@ -81,9 +82,9 @@ anchor ticket 0.31 0 1.51
 state parked
   box  1.30  0.78  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.front
   box -1.30  0.78  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.rear
-  box  0.00  0.00  0.16   3.80 1.60 0.36  #7f868a  n=sill
-  box  0.00  0.00  0.52   3.86 1.66 0.54  #a8b0ae  n=body
-  box -0.15  0.00  1.06   2.30 1.52 0.44  #a8b0ae  roof=0.72 n=cabin
+  box  0.00  0.00  0.16   3.80 1.60 0.36  paint:0.75  n=sill
+  box  0.00  0.00  0.52   3.86 1.66 0.54  paint  n=body
+  box -0.15  0.00  1.06   2.30 1.52 0.44  paint  roof=0.72 n=cabin
   box  1.96  0.55  0.78   0.14 0.36 0.16  #f4f5f1  mir=1 n=lamp
   box -1.96  0.62  0.86   0.10 0.22 0.28  #c0392b  mir=1 n=tail
   box  1.97  0.00  0.56   0.08 0.90 0.20  #14171a  n=grille
@@ -95,11 +96,11 @@ anchor ticket 0.12 0 1.27
 state parked
   box  1.42  0.86  0.00   0.64 0.24 0.33  #0d0e10  mir=1 n=wheel.front
   box -1.42  0.86  0.00   0.64 0.24 0.33  #0d0e10  mir=1 n=wheel.rear
-  box  0.00  0.00  0.18   4.56 1.74 0.28  #4c5359  n=sill
-  box  0.00  0.00  0.46   4.62 1.80 0.40  #6b7278  n=body
-  box -0.30  0.00  0.86   2.10 1.62 0.40  #6b7278  roof=0.66 n=cabin
-  box -1.75  0.00  0.86   1.00 1.70 0.10  #6b7278  n=boot
-  box  1.55  0.00  0.86   1.10 1.66 0.06  #6b7278  n=bonnet
+  box  0.00  0.00  0.18   4.56 1.74 0.28  paint:0.75  n=sill
+  box  0.00  0.00  0.46   4.62 1.80 0.40  paint  n=body
+  box -0.30  0.00  0.86   2.10 1.62 0.40  paint  roof=0.66 n=cabin
+  box -1.75  0.00  0.86   1.00 1.70 0.10  paint  n=boot
+  box  1.55  0.00  0.86   1.10 1.66 0.06  paint  n=bonnet
   box  2.34  0.62  0.66   0.12 0.42 0.20  #f4f5f1  mir=1 n=lamp
   box  2.36  0.00  0.42   0.08 1.10 0.32  #14171a  n=grille
   box -2.36  0.64  0.70   0.08 0.34 0.18  #c0392b  mir=1 n=tail
@@ -111,10 +112,10 @@ anchor ticket -0.8 0 1.97
 state parked
   box  1.48  0.90  0.00   0.76 0.28 0.40  #0d0e10  mir=1 n=wheel.front
   box -1.48  0.90  0.00   0.76 0.28 0.40  #0d0e10  mir=1 n=wheel.rear
-  box  0.00  0.00  0.26   4.70 1.86 0.36  #3a443e  n=sill
-  box  0.00  0.00  0.62   4.76 1.92 0.62  #4a5a52  n=body
-  box -0.20  0.00  1.24   2.90 1.84 0.54  #4a5a52  roof=0.70 n=cabin
-  box -1.10  0.00  1.78   1.50 1.78 0.12  #4a5a52  n=roof.step
+  box  0.00  0.00  0.26   4.70 1.86 0.36  paint:0.75  n=sill
+  box  0.00  0.00  0.62   4.76 1.92 0.62  paint  n=body
+  box -0.20  0.00  1.24   2.90 1.84 0.54  paint  roof=0.70 n=cabin
+  box -1.10  0.00  1.78   1.50 1.78 0.12  paint  n=roof.step
   box -1.10  0.80  1.90   1.50 0.10 0.06  #2b3036  mir=1 n=roof.rail
   box  2.42  0.68  1.00   0.14 0.40 0.24  #f4f5f1  mir=1 n=lamp
   box  2.44  0.00  0.72   0.08 1.24 0.30  #14171a  n=grille
@@ -127,11 +128,11 @@ anchor ticket -0.19 0 1.07
 state parked
   box  1.22  0.76  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.front
   box -1.22  0.76  0.00   0.56 0.22 0.30  #0d0e10  mir=1 n=wheel.rear
-  box  0.00  0.00  0.14   3.84 1.60 0.28  #6e2a25  n=sill
-  box -0.10  0.00  0.42   3.50 1.66 0.30  #9e3a33  n=body
+  box  0.00  0.00  0.14   3.84 1.60 0.28  paint:0.75  n=sill
+  box -0.10  0.00  0.42   3.50 1.66 0.30  paint  n=body
   box -0.45  0.00  0.72   1.30 1.48 0.34  #23272c  top=#1b1f23 n=softtop
-  box -1.30  0.00  0.72   1.00 1.56 0.08  #9e3a33  n=boot
-  box  1.86  0.00  0.42   0.44 1.40 0.20  #9e3a33  n=nose
+  box -1.30  0.00  0.72   1.00 1.56 0.08  paint  n=boot
+  box  1.86  0.00  0.42   0.44 1.40 0.20  paint  n=nose
   box  1.44  0.48  0.72   0.24 0.32 0.22  #f4f5f1  mir=1 n=lamp.popup
   box  2.10  0.00  0.44   0.08 0.60 0.10  #14171a  n=grille
   box -1.92  0.56  0.56   0.08 0.28 0.16  #c0392b  mir=1 n=tail

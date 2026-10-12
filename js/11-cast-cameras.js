@@ -54,11 +54,12 @@ function parseCast(txt){
       }
       /* `paint`: the owner's colour, filled in at draw time. A neutral grey
          stands in wherever nothing has been chosen. */
-      const paint = col === 'paint';
+      const paint = col === 'paint' || col.indexOf('paint:') === 0;
+      const paintK = paint && col.length > 6 ? (parseFloat(col.slice(6)) || 1) : 1;
       const hex = paint ? '#8e9398' : col.length > 7 ? col.slice(0, 7) : col;   // drop any alpha
       for (const sg of (mir ? [1, -1] : [1]))
         st.push({ f:+w[1], l:(+w[2]) * sg, z:+w[3], L:+w[4], W:+w[5], H:+w[6],
-                  rot:rot * sg, col:hex, lit:lit, paint:paint, part:part, n:nm });
+                  rot:rot * sg, col:hex, lit:lit, paint:paint, paintK:paintK, part:part, n:nm });
     }
   }
   return out;
@@ -80,11 +81,18 @@ function spriteItems(name, x, y, h, z, o){
     const it = { cid:o ? o.cid : undefined, lit:q.lit,
                  X:x + q.f * ch - q.l * sh, Y:y + q.f * sh + q.l * ch,
                  L:q.L, W:q.W, rot:h + q.rot, z0:z + q.z, z1:z + q.z + q.H,
-                 col:(q.paint && o && o.paint) ? o.paint : q.col };
+                 col:(q.paint && o && o.paint) ? tint(o.paint, q.paintK) : q.col };
     if (o && o.each) o.each(q, it);
     out.push(it);
   }
   return out;
+}
+/* `paint:0.75` - the paint colour scaled toward black. */
+function tint(hex, k){
+  if (k === 1 || !hex || hex.charAt(0) !== '#') return hex;
+  const n = parseInt(hex.slice(1, 7), 16);
+  const c = function(v){ return ('0' + Math.max(0, Math.min(255, Math.round(v * k))).toString(16)).slice(-2); };
+  return '#' + c(n >> 16 & 255) + c(n >> 8 & 255) + c(n & 255);
 }
 /* A named anchor of a sprite, in its own frame, or null. */
 function anchorOf(name, a){
@@ -1184,7 +1192,9 @@ function addBeing(kind, x, y, who){
                  'standing','walking','pushing','driving'];
   let pool = sp ? sp.order.filter(function(n){ return POSES.indexOf(n) < 0; }) : [];
   if (!pool.length && sp) pool = sp.order;
-  const look = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  /* A resident keeps their look from visit to visit: Moira in her coat. */
+  let look = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  if (who && who.look && pool.indexOf(who.look) >= 0) look = who.look;
   const b = { kind:kind, k:k, x:x, y:y, h:Math.random() * 6.28, z:0, vz:0,
               look:look, state:look, home:[x, y], leg:false,
               away:false, leaving:false, arriving:false,
@@ -1218,6 +1228,7 @@ function addBeing(kind, x, y, who){
   const res = (hasLife(b) || kind === 'manager' || kind === 'trolleyboy')
             ? claimResident(b, who) : null;
   b.res = res;
+  if (res && !res.look) res.look = b.look;
   b.name = res ? res.name : (kind + ' ' + b.pid);
   if (!CENSUS.mute && hasLife(b)){
     /* Coming back into view mid-visit (out of the shop doors) carries the visit

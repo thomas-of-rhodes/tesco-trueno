@@ -156,7 +156,7 @@ const TOWN = (function(){
   /* The night manager. Same job, less of the enthusiasm, and a car that has
      seen better years. */
   out.push({ rid:rid++, kind:'manager', night:true, sex:'m', first:'Gordon', last:'Fraser',
-             name:'Gordon Fraser', being:null, car:{ sprite:'jazz' }, visits:[], visit:null });
+             name:'Gordon Fraser', being:null, car:{ sprite:'jazz', paint:'#24364f' }, visits:[], visit:null });
   /* Habits, from a generator of their own so the names above never move. Some
      people use the free parking to go into town as a matter of course; most
      only ever come for the shop. */
@@ -227,7 +227,7 @@ function spawnStaffCar(r, being){
   const bay = staffBay();
   if (!bay) return null;
   const g = carGate();
-  const c = makeNpc(modelOf(r), g[0] + 0.5, g[1], 0, 'in');
+  const c = makeNpc(modelOf(r), g[0] + 0.5, g[1], 0, 'in', null, r.car && r.car.paint);
   bay.claimed = true;
   c.bay = bay;
   c.veh.ownerRid = r.rid;
@@ -254,7 +254,7 @@ function settleStaff(sb, c){
   sb.carSprite = c.model.sprite;
   bay.ownerCid = sb.cid; bay.longStay = true;
   c.veh.ownerPid = sb.pid;
-  if (sb.res) sb.res.car = { vid:c.veh.vid, sprite:c.veh.sprite };
+  if (sb.res) sb.res.car = carRecord(c.veh);
   sb.carComing = null; sb.carTries = 0;
   /* Arriving for a shift walks in; one who was LEAVING and could not get out
      is stood beside the car again and will have another go. */
@@ -413,6 +413,7 @@ function freeResident(kind){
     if (r.kind !== kind) continue;
     if (residentOnSite(r)) continue;
     if (r.visit && r.visit.out === null) continue;
+    if (r.reserved && !r.reserved.done) continue;      // driving in right now
     free.push(r);
   }
   return free.length ? free[Math.floor(Math.random() * free.length)] : null;
@@ -451,8 +452,35 @@ function offMapOwner(bay){
 
 let PID = 0, VID = 0;
 const VEH = [];                       // every vehicle that has ever existed
-function newVeh(model){
-  const v = { vid:VID++, sprite:model ? model.sprite : '?',
+/* Car paint, from the stats (Thomas, 2026-10-12: "there must be stats
+   available for uk car colours"). A car park holds cars up to twenty years
+   old, so this blends the on-the-road fleet (DVLA, 2017: silver 21%, black 20%,
+   blue 18%, grey ~13%) with new registrations (SMMT 2024: grey 27.8%, black
+   21.7%, blue 14.9%, white 14.9%, red 7.0%, silver 6.3%, green 3.5%, yellow
+   0.6%, orange 0.6%, bronze 0.3%). Silver and grey in several shades lead;
+   black and blue are commoner than you would guess; yellow, orange and lime
+   are rare. Weights are percentages. */
+const PAINTS = [
+  /* silver and grey, ~38% */
+  ['#c3c8c8', 7], ['#b2b9b9', 8], ['#a1a8aa', 7], ['#8d9599', 6], ['#767e83', 5], ['#5f666c', 5],
+  /* black ~20%, blue ~16%, white ~12%, red ~8% */
+  ['#1f2226', 14], ['#2c3036', 6],
+  ['#2f5a8f', 7], ['#24364f', 5], ['#5c7fae', 4],
+  ['#e6e8e6', 9], ['#d6d8d3', 3],
+  ['#9e3a33', 5], ['#7a2a2a', 3],
+  /* and the few: dark green, bronze, beige, yellow, orange, lime */
+  ['#3f4f46', 2.2], ['#8a6a4a', 0.6], ['#c8b796', 0.4], ['#d8b13a', 0.6], ['#c4702a', 0.6], ['#8bbf3a', 0.2] ];
+function pickPaint(){
+  let t = 0;
+  for (const p of PAINTS) t += p[1];
+  let r = Math.random() * t;
+  for (const p of PAINTS){ r -= p[1]; if (r <= 0) return p[0]; }
+  return PAINTS[0][0];
+}
+/* What a resident remembers about their car. */
+function carRecord(v){ return { vid:v.vid, sprite:v.sprite, paint:v.paint }; }
+function newVeh(model, paint){
+  const v = { vid:VID++, sprite:model ? model.sprite : '?', paint:paint || pickPaint(),
               ownerPid:null, ownerRid:null, bay:null, fate:null, born:simClockNow() };
   VEH.push(v);
   return v;
@@ -887,8 +915,8 @@ function pickModel(){
        : r < 0.94 ? NPC_MODELS[2] : NPC_MODELS[3];
 }
 
-function makeNpc(model, x, y, h, state, veh){
-  const c = { model:model, veh:veh || newVeh(model), x:x, y:y, h:h, spd:0, state:state, bay:null,
+function makeNpc(model, x, y, h, state, veh, paint){
+  const c = { model:model, veh:veh || newVeh(model, paint), x:x, y:y, h:h, spd:0, state:state, bay:null,
               path:null, at:0, t:0, wait:0, blocked:0, cid:'n' + (CID++),
               box:{ x:x, y:y, hl:model.l / 2, hw:model.w / 2, a:h,
                     c:Math.cos(-h), s:Math.sin(-h), kind:'car' } };
@@ -959,10 +987,18 @@ function spawnArrival(){
     const bay = pickBay(tried);
     if (!bay) return false;
     const g = carGate();
-    const c = makeNpc(pickModel(), g[0] + 0.5, g[1], 0, 'in');
+    /* WHO is arriving, first - and they come in their own car, in its own
+       paint, if they have been before. A random car with a random person
+       getting out of it meant Moira turned up in a different car each time. */
+    const r = CENSUS.mute ? null : freeResident(Math.random() < 0.3 ? 'granny' : 'shopper');
+    const model = r && r.car ? modelOf(r)
+                : (r && r.kind === 'granny' && Math.random() < 0.62) ? NPC_MODELS[0] : pickModel();
+    const c = makeNpc(model, g[0] + 0.5, g[1], 0, 'in', null, r && r.car && r.car.paint);
+    if (r){ c.resident = r; r.reserved = c; }
     bay.claimed = true;
     c.bay = bay;
     if (routeFor(c, bay.ax, bay.ay)){ syncNpc(c); return true; }
+    if (r) r.reserved = null;
     CARS.pop(); bay.claimed = false; tried.push(bay);
   }
   return false;
@@ -1353,9 +1389,14 @@ function stepNpc(c, dt){
                  ? TOWN[c.veh.ownerRid] : null;
       const again = !!(back && back.visit && back.visit.out === null &&
                        !residentOnSite(back));
-      const kind = again ? figureOf(back)
+      /* Or the resident who drove in, if this is a fresh arrival. */
+      const fresh = !again && c.resident && !residentOnSite(c.resident) &&
+                    !(c.resident.visit && c.resident.visit.out === null) ? c.resident : null;
+      if (c.resident) c.resident.reserved = null;
+      const kind = again ? figureOf(back) : fresh ? fresh.kind
                  : (c.model.sprite === 'jazz' && Math.random() < 0.62) ? 'granny' : 'shopper';
-      const w = addBeing(kind, c.bay.x + c.bay.toAisle * 1.4, c.bay.y, again ? back : undefined);
+      const w = addBeing(kind, c.bay.x + c.bay.toAisle * 1.4, c.bay.y,
+                         again ? back : fresh || undefined);
       if (again && !c.shopStaff) TRAF.reparkedOwner = (TRAF.reparkedOwner || 0) + 1;
       w.home = [c.bay.x + c.bay.toAisle * 1.4, c.bay.y];
       w.ownBay = c.bay;
@@ -1369,7 +1410,7 @@ function stepNpc(c, dt){
       w.parkedAt = bayStand(c.bay);
       c.bay.ownerCid = w.cid;
       if (c.veh){ c.veh.ownerPid = w.pid; c.veh.ownerRid = w.res ? w.res.rid : null;
-        if (w.res){ w.res.car = { vid:c.veh.vid, sprite:c.veh.sprite }; if (w.res.visit) w.res.visit.by = 'car'; } }
+        if (w.res){ w.res.car = carRecord(c.veh); if (w.res.visit) w.res.visit.by = 'car'; } }
       /* Not everybody who parks here is here for Tesco. */
       if (!again && wantsTown(w.res)) w.life = 'toTown';
       /* A member of staff starting a shift: into work, not into the shop. */
@@ -2132,6 +2173,7 @@ function npcParts(c){
                X:c.x + q.f * ch - q.l * sh, Y:c.y + q.f * sh + q.l * ch,
                L:q.L, W:q.W, rot:c.h + q.rot,
                z0:q.z + (c.z || 0) + (c.airborne || 0),
-               z1:q.z + q.H + (c.z || 0) + (c.airborne || 0), col:q.col });
+               z1:q.z + q.H + (c.z || 0) + (c.airborne || 0),
+               col:(q.paint && c.veh && c.veh.paint) ? tint(c.veh.paint, q.paintK) : q.col });
   return out;
 }

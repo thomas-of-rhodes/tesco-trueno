@@ -10,8 +10,9 @@
 # axes   f = along facing (+ forward), l = lateral (+ left), z = up. metres.
 # box    box <f> <l> <z>  <L> <W> <H>  <colour>  [flags]
 #          f,l are the box centre; z is its BASE. L is along f, W along l, H up.
-# colour #rrggbb | #rrggbbaa | none | paint
-#          paint: the vehicle's own colour, chosen per car and kept by its owner
+# colour #rrggbb | #rrggbbaa | none | paint | paint:<k>
+#          paint: the owner's colour (an umbrella's canopy, say)
+#          paint:0.75 is that colour darkened to 75%
 # flags  n=<label>          a name, for the editor list
 #        mir=1              also draw the mirror image at -l (swaps lft/rgt)
 #        rot=<radians>      extra yaw, added to the sprite heading
