@@ -56,7 +56,9 @@ const BRAINS = {
    Made on first use, through brainOf, because a town saved before gulls had
    brains loads a BRAINS without one. */
 const BRAIN_NEW = {
-  gull:function(){ return { policy:'hand', kind:{}, learnRate:0, dialRate:0.05, base:null, v:0,
+  /* Gull brain v1.0 shipped 2026-10-13: the brain by default, its shared hive
+     as shipped, each gull's own dials learning. */
+  gull:function(){ return { policy:'net', kind:{}, learnRate:0, dialRate:0.05, base:null, v:1,
                             made:{}, replay:[],
                             life:{ mins:0, feel:0, food:0, flock:0, frights:0, held:0, crumbs:0,
                                    heavy:0, left:0, arrived:0 } }; }
@@ -705,11 +707,15 @@ function brainLearn(kb, pb, diary, kind){
 /* A town saved before a brain shipped is switched to it once, on its first
    decision: the shipped hive, frozen; her own dials learning. */
 const GRANNY_BRAIN_V = 1;
+const GULL_BRAIN_V = 1;
 function decide(name, b, ctx){
   const dp = DECISIONS[name];
   const kb = brainOf(dp.kind);
   if (dp.kind === 'granny' && (kb.v || 0) < GRANNY_BRAIN_V){
     kb.v = GRANNY_BRAIN_V; kb.policy = 'net'; kb.learnRate = 0; kb.dialRate = 0.05; kb.kind = {};
+  }
+  if (dp.kind === 'gull' && (kb.v || 0) < GULL_BRAIN_V){
+    kb.v = GULL_BRAIN_V; kb.policy = 'net'; kb.learnRate = 0; kb.dialRate = 0.05; kb.kind = {};
   }
   const s = dp.senses(b, ctx);
   const pol = POLICIES[kb.policy] || POLICIES.hand;
