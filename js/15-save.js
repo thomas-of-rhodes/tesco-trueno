@@ -416,7 +416,12 @@ function saveNewDay(){
     }
     addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') saveNow(); });
     addEventListener('pagehide', function(){ saveNow(); });
-    requestAnimationFrame(frame);
+    /* Not one frame until every script has arrived: the scripts after this one
+       (the brains, the foxes, the brainoscope) are fetched one by one, and a
+       frame that ran first stopped dead on the missing fox code - and took the
+       animation loop with it (2026-10-13). */
+    if (document.readyState === 'complete') requestAnimationFrame(frame);
+    else addEventListener('load', function(){ requestAnimationFrame(frame); });
   };
   /* The lab (lab.html, step 5). In a worker it boots the day itself; in a
      frame (when workers are not allowed, e.g. a page opened from a file) the
