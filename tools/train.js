@@ -120,7 +120,8 @@ async function main(){
     const r = rr.row;
     T.rows.push(r);
     if (r.diff !== null && (!T.best || r.diff > T.best.diff)) T.best = { diff:r.diff, round:k, hive:G.netCopy(T.hive) };
-    G.learnFrom(T.hive, T.st, rr.samples, c.lr);
+    const lf = G.learnFrom(T.hive, T.st, rr.samples, c.lr);
+    r.steps = lf.steps; r.clipped = lf.clipped;
     T.next = k + 1; save();
     say('');
     console.log('\r' + String(k).padStart(5) + num(r.net) + num(r.hand) + '   ' + num(r.diff) + '  ' + num(r.se) +
@@ -128,6 +129,7 @@ async function main(){
                 '   ' + num(r.wet) + '/' + num(r.wetH) + '   ' + num(r.shelter) + '/' + num(r.shelterH) + '   ' + num(r.gaveUp) +
                 '   ' + num(r.linger) + '/' + num(r.lingerH) + '  ' + num(r.wander) + '/' + num(r.wanderH) +
                 '  ' + num(r.gulls) + '/' + num(r.gullsH) + '  ' + num(r.mobbed) + '/' + num(r.mobbedH) +
+                '   [' + r.steps + ' steps, ' + Math.round(100 * r.clipped) + '% held back]' +
                 (r.errs ? '   ' + r.errs + ' FAILED: ' + r.err : ''));
   }
   T.done = true; save();

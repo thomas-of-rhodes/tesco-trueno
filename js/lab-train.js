@@ -27,12 +27,21 @@ function copyHand(samples){
   }
   return { hive:hive, acc:samples.length ? hit / samples.length : null };
 }
-/* After a round: REINFORCE, one choice at a time. Each choice is pushed by
-   what followed IT (its two minutes of her feelings) against what usually
-   follows that kind of choice this round, in standard deviations. */
+/* After a round: learn from its choices, one choice at a time. Each is
+   pushed by what followed IT (its two minutes of her feelings) against what
+   usually follows that kind of choice this round, in standard deviations.
+
+   2026-10-13: the first version took 4 small steps a round - 28 in seven
+   rounds - and the brain hardly moved off its copy of the hand-written granny
+   while thousands of choices went to waste. Now LEARN_PASSES passes over the
+   round, in minibatches, with the usual safety rail for this (the clipped
+   objective of PPO): once a choice's chance has moved more than LEARN_CLIP
+   (20%) from what it was when she made it, that choice stops pushing. She
+   learns from the round as hard as it will bear, but never lurches. */
+const LEARN_PASSES = 8, LEARN_BATCHES = 4, LEARN_CLIP = 0.2;
 function learnFrom(hive, st, samples, lr){
   samples = samples.filter(function(e){ return e.credit !== undefined && e.credit !== null; });
-  if (!samples.length) return;
+  if (!samples.length) return { steps:0, clipped:0 };
   const by = {};
   for (const e of samples) (by[e.d] = by[e.d] || []).push(e.credit);
   const norm = {};
@@ -40,17 +49,34 @@ function learnFrom(hive, st, samples, lr){
     const m = mean(by[d]);
     norm[d] = { m:m, sd:Math.sqrt(mean(by[d].map(function(x){ return (x - m) * (x - m); }))) || 1 };
   }
-  const chunks = 4, per = Math.ceil(samples.length / chunks);
-  for (let c = 0; c < chunks; c++){
-    const part = samples.slice(c * per, (c + 1) * per);
-    if (!part.length) continue;
-    const acc = netZero(hive);
-    for (const e of part){
-      const adv = (e.credit - norm[e.d].m) / norm[e.d].sd;
-      netGrad(hive, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv / part.length, acc);
+  /* How likely each choice was under the brain that made it (this round's). */
+  const old = samples.map(function(e){
+    return netChances(netForward(hive, grannyInput(e.s, e.d)).z, GRANNY_SLOTS[e.d]).p[e.a];
+  });
+  const order = samples.map(function(e, i){ return i; });
+  const r = netRng(samples.length * 7919 + (st.t || 0));
+  let steps = 0, clipped = 0, seen = 0;
+  for (let pass = 0; pass < LEARN_PASSES; pass++){
+    for (let i = order.length - 1; i > 0; i--){ const j = Math.floor(r() * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
+    const per = Math.ceil(order.length / LEARN_BATCHES);
+    for (let c = 0; c < LEARN_BATCHES; c++){
+      const part = order.slice(c * per, (c + 1) * per);
+      if (!part.length) continue;
+      const acc = netZero(hive);
+      for (const k of part){
+        const e = samples[k];
+        const adv = (e.credit - norm[e.d].m) / norm[e.d].sd;
+        const x = grannyInput(e.s, e.d), sl = GRANNY_SLOTS[e.d];
+        const ratio = netChances(netForward(hive, x).z, sl).p[e.a] / Math.max(1e-9, old[k]);
+        seen++;
+        if ((adv > 0 && ratio > 1 + LEARN_CLIP) || (adv < 0 && ratio < 1 - LEARN_CLIP)){ clipped++; continue; }
+        netGrad(hive, x, sl, e.a, adv * ratio / part.length, acc);
+      }
+      netAdam(hive, acc, st, lr);
+      steps++;
     }
-    netAdam(hive, acc, st, lr);
   }
+  return { steps:steps, clipped:seen ? clipped / seen : 0 };
 }
 
 /* One round's results: specs[i] is { arm:'net'|'hand', seed }, in pairs (the
