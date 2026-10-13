@@ -374,7 +374,18 @@ function stepMover(m, dt){
     void fwd;
   } else { m.vx = 0; m.vy = 0; }
   m.r *= Math.max(0, 1 - 2.4 * dt);
+  if (m.vx === 0 && m.vy === 0 && Math.abs(m.r) < 1e-4) m.r = 0;
   m.x += m.vx * dt; m.y += m.vy * dt; m.h += m.r * dt;
+
+  /* At rest, and nothing has moved it since it last looked: the four corner
+     checks below come out the same, so a still trolley only looks every
+     eighth step (2026-10-13 - trolleys standing still were 39% of the sim's
+     time, the lab's first profile). Anything that pushes it - Trueno, another
+     trolley, Kyle, the hand - moves it or gives it speed, and it looks again
+     at once; a car nosing into it is noticed within eight steps (1/15 s). */
+  if (m.vx === 0 && m.vy === 0 && m.r === 0 &&
+      m.x === m.restX && m.y === m.restY && m.h === m.restH &&
+      ((m.restN = (m.restN || 0) + 1) & 7) !== 0) return;
 
   /* Against the world. Four corners, push out, and lose most of the speed - a
      trolley hitting a kerb stops, it does not ping off. */
@@ -392,6 +403,7 @@ function stepMover(m, dt){
       m.r += (k[0] * n[1] - k[1] * n[0]) * vn * 0.8;
     }
   }
+  m.restX = m.x; m.restY = m.y; m.restH = m.h;
   syncBox(m);
 }
 

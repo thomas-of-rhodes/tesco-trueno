@@ -378,7 +378,10 @@ function simStep(){
   const grounded = !car.held && !car.airborne;
   if (auto && grounded && (SIM_TICK % 4) === 0) drive(car, CTL);
   if (grounded){
+    const wasTouching = car.touching;
     stepPhysics(car, CTL, DT); collide(car); collideMovers(car); collidePeople(car);
+    /* Counted for the lab: the start of each contact with the world. */
+    if (car.touching && !wasTouching) MOOD.bumps = (MOOD.bumps || 0) + 1;
   } else {
     stepCarFall(DT);
   }

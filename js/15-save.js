@@ -360,6 +360,7 @@ function saveNewDay(){
                                              function(e){ alert('Could not store it: ' + e.message); SAVE.off = false; });
 }
 (function(){
+  if (self.LAB_WORKER) return;        // a lab worker has no buttons
   const bar = document.getElementById('bPlan');
   if (!bar) return;
   const mk = function(id, label, title){
@@ -415,6 +416,18 @@ function saveNewDay(){
     addEventListener('pagehide', function(){ saveNow(); });
     requestAnimationFrame(frame);
   };
+  /* The lab (lab.html, step 5). In a worker it boots the day itself; in a
+     frame (when workers are not allowed, e.g. a page opened from a file) the
+     day is built here and lab-run.js takes it from there. Neither saves. */
+  if (self.LAB_WORKER){ SAVE.off = true; return; }
+  if (new URLSearchParams(location.search).has('lab')){
+    SAVE.off = true;
+    bootDay();
+    const sc = document.createElement('script');
+    sc.src = 'js/lab-run.js';
+    document.head.appendChild(sc);
+    return;
+  }
   if (replay){ SAVE.off = true; go(null); return; }
   if (sessionStorage.getItem('trueno-no-save')){
     sessionStorage.removeItem('trueno-no-save');

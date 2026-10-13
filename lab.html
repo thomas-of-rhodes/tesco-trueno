@@ -1,0 +1,321 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trueno &mdash; the lab</title>
+<!-- Pre-neural step 5 (2026-10-13). Runs days with nothing drawn, many at once
+     (one per background worker, one worker per processor core), and scores
+     them. Same seed, same day: A and B are compared on the SAME days, so the
+     difference is the variant and not the luck. For the laptop; the game itself
+     never needs this page. -->
+<style>
+html,body{margin:0;background:#0a0c0e;color:#cfd6db;
+  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:14px;font-weight:400;color:#8fc3d8;margin:0 0 2px}
+.sub{color:#5c666e;margin:0 0 14px}
+h4{margin:18px 0 6px;font-size:10.5px;font-weight:400;color:#6c7780;letter-spacing:.06em;text-transform:uppercase}
+button{font:inherit;color:#cfd6db;background:#12161a;border:1px solid #262c32;border-radius:2px;padding:4px 11px;cursor:pointer}
+button:hover{border-color:#3a444c}
+button:disabled{opacity:.4;cursor:default}
+button.go{border-color:#4d7f96;color:#8fc3d8}
+input,select,textarea{font:inherit;color:#cfd6db;background:#0f1317;border:1px solid #262c32;border-radius:2px;padding:3px 6px}
+textarea{width:100%;box-sizing:border-box;height:52px;resize:vertical}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;align-items:end}
+label{display:block;color:#7e8890;font-size:11px}
+label input,label select{display:block;margin-top:3px;width:100%;box-sizing:border-box}
+.arms{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:10px}
+@media (max-width:700px){.arms{grid-template-columns:1fr}}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+#status{color:#7e8890}
+#runs{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.run{width:74px;border:1px solid #23282d;border-radius:2px;padding:2px 4px;font-size:10.5px;color:#7e8890;position:relative;overflow:hidden}
+.run i{position:absolute;left:0;bottom:0;height:2px;background:#4d7f96}
+.run.done{color:#a9b4bb}
+.run.done i{background:#5f8f4e}
+.run.err{color:#e8927f;border-color:#6a3a32}
+table{border-collapse:collapse;width:100%}
+td,th{padding:2px 8px 2px 0;text-align:right;white-space:nowrap}
+th{font-weight:400;color:#6c7780;font-size:11px}
+td:first-child,th:first-child{text-align:left;white-space:normal}
+tr.grp td{color:#6c7780;padding-top:8px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;text-align:left}
+.ok{color:#8fbf7a}.bad{color:#e8927f}.dim{color:#5c666e}.hi{color:#8fc3d8}
+pre{white-space:pre-wrap;color:#e8927f;font-size:11px;background:#0f1317;border:1px solid #23282d;padding:6px;max-height:200px;overflow:auto}
+.note{color:#5c666e;font-size:11px;margin-top:6px}
+</style>
+<main>
+  <h1>the lab</h1>
+  <p class="sub">days run with nothing drawn, scored &mdash; readings, not one number to win</p>
+
+  <div class="grid">
+    <label>first seed <input id="seed0" type="number" value="1000"></label>
+    <label>how many days (seeds) <input id="nSeeds" type="number" value="8" min="1"></label>
+    <label>length of each
+      <select id="len">
+        <option value="120">2 sim minutes</option>
+        <option value="300" selected>5 sim minutes</option>
+        <option value="600">10 sim minutes</option>
+        <option value="1200">20 sim minutes (a whole day)</option>
+      </select></label>
+    <label>at once <input id="nWork" type="number" min="1"></label>
+  </div>
+  <div class="arms">
+    <label>A &mdash; the variant's code (empty: the sim as it is)
+      <textarea id="codeA" spellcheck="false"></textarea></label>
+    <label>B &mdash; leave empty to run A alone
+      <textarea id="codeB" spellcheck="false" placeholder="e.g. KEEP_LEFT = 1.4"></textarea></label>
+  </div>
+  <div class="row">
+    <button id="go" class="go">run</button>
+    <button id="stop" disabled>stop</button>
+    <button id="exp" disabled>export results</button>
+    <span id="status"></span>
+  </div>
+  <div id="runs"></div>
+  <div id="errs"></div>
+
+  <h4>results</h4>
+  <table id="res"></table>
+  <p class="note">With B: B&minus;A is averaged over the same seeds, &plusmn; is twice its standard error,
+    and a difference is only <span class="hi">highlighted</span> once it is bigger than that.
+    Integrity rows must be 0. &ldquo;Screen touched&rdquo; counts the sim reaching for the screen
+    while it steps, which it must never do.</p>
+</main>
+
+<script src="js/lab-run.js"></script>
+<script>
+'use strict';
+const $ = function(id){ return document.getElementById(id); };
+const cores = navigator.hardwareConcurrency || 4;
+$('nWork').value = Math.max(1, cores - 1);
+const DT_ = 1 / 120;
+
+let LAB = null;        // the experiment in progress
+
+/* The game's files, in the game's order, read out of trueno.html so the lab
+   always runs exactly what the page runs. */
+function gameScripts(){
+  return fetch('trueno.html', { cache:'no-store' }).then(function(r){ return r.text(); }).then(function(t){
+    const out = [];
+    const re = /<script src="([^"]+)"><\/script>/g;
+    let m;
+    while ((m = re.exec(t))) out.push(new URL(m[1], location.href).href + '?t=' + Date.now());
+    return out;
+  });
+}
+
+/* Workers where they are allowed (a web address); hidden frames, one at a time,
+   where they are not (a page opened straight from a file). */
+function canWork(){
+  if (location.protocol === 'file:') return false;
+  if (new URLSearchParams(location.search).has('frames')) return false;   // to test the fallback
+  try { const w = new Worker('js/lab-worker.js?probe=1'); w.terminate(); return true; }
+  catch (e){ return false; }
+}
+
+function start(){
+  const seed0 = +$('seed0').value | 0, n = Math.max(1, +$('nSeeds').value | 0);
+  const secs = +$('len').value, ticks = Math.round(secs / DT_);
+  const codeA = $('codeA').value.trim(), codeB = $('codeB').value.trim();
+  const arms = codeB ? [['A', codeA], ['B', codeB]] : [['A', codeA]];
+  const workers = canWork();
+  const jobs = [];
+  for (let i = 0; i < n; i++) for (const a of arms)
+    jobs.push({ arm:a[0], code:a[1], seed:seed0 + i, ticks:ticks, state:'wait', tick:0, el:null });
+  LAB = { jobs:jobs, arms:arms.map(function(a){ return a[0]; }), workers:workers,
+          par:workers ? Math.max(1, +$('nWork').value | 0) : 1, live:[], t0:performance.now(),
+          secs:secs, codeA:codeA, codeB:codeB, stopped:false, scripts:null };
+  $('runs').innerHTML = ''; $('errs').innerHTML = ''; $('res').innerHTML = '';
+  for (const j of jobs){
+    j.el = document.createElement('div');
+    j.el.className = 'run';
+    j.el.innerHTML = j.arm + ' ' + j.seed + '<i style="width:0"></i>';
+    $('runs').appendChild(j.el);
+  }
+  $('go').disabled = true; $('stop').disabled = false; $('exp').disabled = true;
+  const begin = function(){ pump(); tickStatus(); };
+  if (workers) gameScripts().then(function(s){ LAB.scripts = s; begin(); },
+                                  function(){ LAB.workers = false; LAB.par = 1; begin(); });
+  else begin();
+}
+
+function pump(){
+  if (!LAB || LAB.stopped) return;
+  while (LAB.live.length < LAB.par){
+    const j = LAB.jobs.find(function(q){ return q.state === 'wait'; });
+    if (!j) break;
+    launch(j);
+  }
+  if (!LAB.live.length && !LAB.jobs.some(function(q){ return q.state === 'wait'; })) finish();
+}
+
+function launch(j){
+  j.state = 'run';
+  LAB.live.push(j);
+  const onMsg = function(m){
+    if (!m) return;
+    if (m.type === 'ready'){
+      const msg = { type:'run', ticks:j.ticks, code:j.code, every:600 };
+      if (LAB.workers){ msg.scripts = LAB.scripts; msg.runner = new URL('js/lab-run.js', location.href).href; }
+      j.send(msg);
+    } else if (m.type === 'progress'){
+      j.tick = m.tick;
+      j.el.querySelector('i').style.width = (100 * m.tick / m.of).toFixed(1) + '%';
+    } else if (m.type === 'done'){
+      j.state = 'done'; j.result = m.result; j.tick = j.ticks;
+      j.el.className = 'run done';
+      j.el.querySelector('i').style.width = '100%';
+      j.el.title = 'fingerprint ' + m.result.fp + ', ' + (m.result.simSecs / (m.result.ms / 1000)).toFixed(1) + 'x real time';
+      end(j);
+    } else if (m.type === 'error'){
+      j.state = 'err'; j.error = m.error;
+      j.el.className = 'run err';
+      const p = document.createElement('pre');
+      p.textContent = j.arm + ' seed ' + j.seed + ':\n' + m.error;
+      $('errs').appendChild(p);
+      end(j);
+    }
+  };
+  if (LAB.workers){
+    const w = new Worker('js/lab-worker.js?seed=' + j.seed);
+    w.onmessage = function(e){ onMsg(e.data); };
+    w.onerror = function(e){ onMsg({ type:'error', error:(e.message || 'worker failed') + ' (' + e.filename + ':' + e.lineno + ')' }); };
+    j.send = function(m){ w.postMessage(m); };
+    j.kill = function(){ w.terminate(); };
+  } else {
+    const f = document.createElement('iframe');
+    f.style.display = 'none';
+    f.src = 'trueno.html?seed=' + j.seed + '&lab=1&t=' + Date.now();
+    const lis = function(e){ if (e.source === f.contentWindow) onMsg(e.data); };
+    addEventListener('message', lis);
+    j.send = function(m){ f.contentWindow.postMessage(m, '*'); };
+    j.kill = function(){ removeEventListener('message', lis); f.remove(); };
+    document.body.appendChild(f);
+  }
+}
+
+function end(j){
+  if (j.kill) j.kill();
+  LAB.live = LAB.live.filter(function(q){ return q !== j; });
+  render();
+  pump();
+}
+
+function stop(){
+  if (!LAB) return;
+  LAB.stopped = true;
+  for (const j of LAB.live){ if (j.kill) j.kill(); j.state = 'stopped'; }
+  LAB.live = [];
+  finish();
+}
+
+function finish(){
+  $('go').disabled = false; $('stop').disabled = true;
+  $('exp').disabled = !LAB.jobs.some(function(q){ return q.result; });
+  render();
+  tickStatus(true);
+}
+
+function tickStatus(last){
+  if (!LAB) return;
+  const done = LAB.jobs.filter(function(q){ return q.state === 'done'; }).length;
+  const total = LAB.jobs.length;
+  const secs = (performance.now() - LAB.t0) / 1000;
+  const simDone = LAB.jobs.reduce(function(a, q){ return a + q.tick * DT_; }, 0);
+  const simAll = total * LAB.secs;
+  const rate = simDone / Math.max(0.1, secs);
+  const eta = rate > 0 ? (simAll - simDone) / rate : 0;
+  $('status').textContent = done + ' of ' + total + ' runs  ·  ' +
+    (LAB.workers ? LAB.par + ' at once' : 'one at a time (no workers here)') + '  ·  ' +
+    rate.toFixed(0) + ' sim s per s' + (last ? '  ·  ' + fmt(secs) + ' taken' : '  ·  about ' + fmt(eta) + ' to go');
+  if (!last && LAB.live.length) setTimeout(tickStatus, 500);
+}
+function fmt(s){ return s < 90 ? Math.round(s) + ' s' : (s / 60).toFixed(1) + ' min'; }
+
+/* ---------------------------------------------------------------- the table */
+function stats(xs){
+  xs = xs.filter(function(x){ return x !== null && x !== undefined && isFinite(x); });
+  const n = xs.length;
+  if (!n) return null;
+  const m = xs.reduce(function(a, b){ return a + b; }, 0) / n;
+  const sd = n > 1 ? Math.sqrt(xs.reduce(function(a, b){ return a + (b - m) * (b - m); }, 0) / (n - 1)) : 0;
+  return { n:n, m:m, sd:sd, se:n > 1 ? sd / Math.sqrt(n) : null,
+           lo:Math.min.apply(null, xs), hi:Math.max.apply(null, xs) };
+}
+function num(x){
+  if (x === null || x === undefined || !isFinite(x)) return '–';
+  const a = Math.abs(x);
+  return a >= 100 ? x.toFixed(0) : a >= 10 ? x.toFixed(1) : a >= 1 ? x.toFixed(2) : x.toFixed(3);
+}
+function render(){
+  if (!LAB) return;
+  const got = LAB.jobs.filter(function(q){ return q.result; });
+  if (!got.length){ $('res').innerHTML = ''; return; }
+  const two = LAB.arms.length === 2;
+  const by = function(arm, k){
+    return got.filter(function(q){ return q.arm === arm; }).map(function(q){ return q.result.metrics[k]; });
+  };
+  /* Paired: only seeds both arms have finished. */
+  const pairs = function(k){
+    const out = [];
+    for (const a of got) if (a.arm === 'A'){
+      const b = got.find(function(q){ return q.arm === 'B' && q.seed === a.seed; });
+      if (b && a.result.metrics[k] !== null && b.result.metrics[k] !== null)
+        out.push(b.result.metrics[k] - a.result.metrics[k]);
+    }
+    return out;
+  };
+  let h = '<tr><th></th><th>A mean</th><th>A range</th>' +
+          (two ? '<th>B mean</th><th>B&minus;A</th><th>&plusmn;</th><th>seeds</th>' : '<th>runs</th>') + '</tr>';
+  let grp = '';
+  for (const row of LAB_ROWS){
+    const k = row[0];
+    if (row[2] !== grp){ grp = row[2]; h += '<tr class="grp"><td colspan="7">' + grp + '</td></tr>'; }
+    const a = stats(by('A', k));
+    if (row[3] === 'zero'){
+      const all = got.reduce(function(s, q){ return s + (q.result.metrics[k] || 0); }, 0);
+      h += '<tr><td>' + row[1] + '</td><td class="' + (all ? 'bad' : 'ok') + '">' + all + '</td><td class="dim">must be 0</td>' +
+           (two ? '<td></td><td></td><td></td><td></td>' : '<td></td>') + '</tr>';
+      continue;
+    }
+    h += '<tr><td>' + row[1] + '</td><td>' + (a ? num(a.m) : '–') + '</td><td class="dim">' +
+         (a ? num(a.lo) + '–' + num(a.hi) : '') + '</td>';
+    if (two){
+      const b = stats(by('B', k)), d = stats(pairs(k));
+      let cls = 'dim';
+      if (d && d.se !== null && d.n >= 3 && Math.abs(d.m) > 2 * d.se){
+        cls = row[3] === '' ? 'hi' : ((d.m > 0) === (row[3] === 'up') ? 'ok' : 'bad');
+      }
+      h += '<td>' + (b ? num(b.m) : '–') + '</td><td class="' + cls + '">' + (d ? (d.m > 0 ? '+' : '') + num(d.m) : '–') +
+           '</td><td class="dim">' + (d && d.se !== null ? num(2 * d.se) : '') + '</td><td class="dim">' + (d ? d.n : 0) + '</td>';
+    } else {
+      h += '<td class="dim">' + (a ? a.n : 0) + '</td>';
+    }
+    h += '</tr>';
+  }
+  /* The lab's own checks. */
+  const touches = got.reduce(function(s, q){ return s + (q.result.screen || 0); }, 0);
+  const what = [];
+  for (const q of got) for (const w of (q.result.screenWhat || [])) if (what.indexOf(w) < 0) what.push(w);
+  const speed = stats(got.map(function(q){ return q.result.simSecs / (q.result.ms / 1000); }));
+  h += '<tr class="grp"><td colspan="7">the lab</td></tr>';
+  h += '<tr><td>screen touched while stepping</td><td class="' + (touches ? 'bad' : 'ok') + '">' +
+       (LAB.workers ? touches : 'n/a') + '</td><td class="dim">' + (what.length ? what.join(' ') : 'must be 0') + '</td></tr>';
+  h += '<tr><td>speed, each run</td><td>' + num(speed.m) + '&times;</td><td class="dim">real time</td></tr>';
+  $('res').innerHTML = h;
+}
+
+function exportResults(){
+  const out = { lab:'tesco-trueno', at:new Date().toISOString(), secs:LAB.secs,
+                A:LAB.codeA, B:LAB.codeB || null,
+                runs:LAB.jobs.map(function(q){ return { arm:q.arm, seed:q.seed, state:q.state,
+                  result:q.result || null, error:q.error || null }; }) };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type:'application/json' }));
+  a.download = 'trueno-lab-' + out.at.slice(0, 16).replace(/[:T]/g, '-') + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+$('go').onclick = start;
+$('stop').onclick = stop;
+$('exp').onclick = exportResults;
+</script>

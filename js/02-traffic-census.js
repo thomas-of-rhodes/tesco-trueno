@@ -554,7 +554,14 @@ function censusNote(kind, what){
 function censusCarDone(c){
   if (CENSUS.mute || !c.veh) return;
   const v = c.veh;
-  if (v.bay && v.bay.car && v.bay.car.veh === v){ CENSUS.ev.carsParked++; return; }
+  if (v.bay && v.bay.car && v.bay.car.veh === v){
+    CENSUS.ev.carsParked++;
+    if (c.st0 === 'in' && c.born !== undefined){
+      CENSUS.ev.parkN = (CENSUS.ev.parkN || 0) + 1;
+      CENSUS.ev.parkSecs = (CENSUS.ev.parkSecs || 0) + (simClockNow() - c.born);
+    }
+    return;
+  }
   if (v.fate === 'void'){ CENSUS.ev.carsVoid++; return; }
   /* The recovery truck going out: the car on its back is gone, properly. */
   if (c.tow){
@@ -957,6 +964,7 @@ function pickModel(){
 
 function makeNpc(model, x, y, h, state, veh, paint){
   const c = { model:model, veh:veh || newVeh(model, paint), x:x, y:y, h:h, spd:0, state:state, bay:null,
+              st0:state, born:simClockNow(),       // for the lab: how long arriving took
               path:null, at:0, t:0, wait:0, blocked:0, cid:'n' + (CID++),
               box:{ x:x, y:y, hl:model.l / 2, hw:model.w / 2, a:h,
                     c:Math.cos(-h), s:Math.sin(-h), kind:'car' } };
