@@ -4,3 +4,4 @@
 
 # dev-only: local static server config and the test harness
 .claude/
+tools/.train-state.json
