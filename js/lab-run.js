@@ -160,7 +160,9 @@ function labRun(cfg, post){
       post({ type:'done', result:{
         metrics:r, ms:Math.round(performance.now() - t0), ticks:ticks,
         simSecs:ticks * DT, fp:labFingerprint(),
-        tap:BRAINS.granny.tap || null,
+        /* Every kind's collected choices (only the kind being trained has its
+           tap switched on). This said BRAINS.granny.tap until the gulls came. */
+        tap:Object.keys(BRAINS).reduce(function(all, k){ return BRAINS[k].tap ? all.concat(BRAINS[k].tap) : all; }, []),
         screen:self.LAB_SCREEN ? self.LAB_SCREEN.touches : null,
         screenWhat:self.LAB_SCREEN ? self.LAB_SCREEN.what.slice(0, 8) : null } });
     } catch (e){
