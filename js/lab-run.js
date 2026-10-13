@@ -37,7 +37,10 @@ function labMetrics(){
     gdCompany:BRAINS.granny.days.company || 0,
     misremembered:ev.misremembered || 0, sheltered:ev.sheltered || 0, forgot:ev.forgot || 0,
     lingered:ev.lingered || 0, wandered:ev.wandered || 0, backIn:ev.backIn || 0,
-    fedGulls:ev.fedGulls || 0, mobbed:ev.mobbed || 0
+    fedGulls:ev.fedGulls || 0, mobbed:ev.mobbed || 0,
+    glMins:brainOf('gull').life.mins, glFeel:brainOf('gull').life.feel, glFood:brainOf('gull').life.food,
+    glFlock:brainOf('gull').life.flock, glFright:brainOf('gull').life.frights, gullHeld:brainOf('gull').life.held,
+    gullCrumbs:brainOf('gull').life.crumbs
   };
 }
 /* The rows lab.html shows, in order: [key, label, group, better]. `better` is
@@ -65,6 +68,12 @@ const LAB_ROWS = [
   ['gaveUp',       'gave up on her car',            'grannies',  'down'],
   ['forgot',       'forgot she drove (bus home)',   'grannies',  ''],
   ['gdN',          'grannies scored',               'grannies',  ''],
+  ['gullHappy',    'a gull\'s life (feel a minute)', 'gulls',     'up'],
+  ['gullFood',     'food, a gull-minute',           'gulls',     'up'],
+  ['gullFlock',    'share of time in company',      'gulls',     'up'],
+  ['gullFright',   'frights, a gull-hour',          'gulls',     'down'],
+  ['gullHeld',     'held its nerve',                'gulls',     ''],
+  ['gullCrumbs',   'crumbs eaten',                  'gulls',     ''],
   ['bumps',        'Trueno: bumps',                 'trueno',    'down'],
   ['sulks',        'Trueno: sulks',                 'trueno',    'down'],
   ['truenoTay',    'Trueno: into the Tay',          'trueno',    'down'],
@@ -139,6 +148,10 @@ function labRun(cfg, post){
       r.grannyChats = r.gdN > 0 ? r.gdChats / r.gdN : null;
       r.grannyWet = r.gdN > 0 ? r.gdWet / r.gdN : null;
       r.grannyCompany = r.gdN > 0 ? r.gdCompany / r.gdN : null;
+      r.gullHappy = r.glMins > 0 ? r.glFeel / r.glMins : null;
+      r.gullFood = r.glMins > 0 ? r.glFood / r.glMins : null;
+      r.gullFlock = r.glMins > 0 ? r.glFlock / r.glMins : null;
+      r.gullFright = r.glMins > 0 ? 60 * r.glFright / r.glMins : null;
       r.jammed = samples ? jammed / samples : null;
       const c = census();
       const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;

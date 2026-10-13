@@ -52,6 +52,18 @@ const BRAINS = {
     replay:[]                              // [{ d, s, a, score, rid }], the newest REPLAY_MAX
   }
 };
+/* The gulls (2026-10-13): hand-written until a brain is trained for them.
+   Made on first use, through brainOf, because a town saved before gulls had
+   brains loads a BRAINS without one. */
+const BRAIN_NEW = {
+  gull:function(){ return { policy:'hand', kind:{}, learnRate:0, dialRate:0.05, base:null, v:0,
+                            made:{}, replay:[],
+                            life:{ mins:0, feel:0, food:0, flock:0, frights:0, held:0, crumbs:0 } }; }
+};
+function brainOf(kind){
+  return BRAINS[kind] || (BRAINS[kind] = BRAIN_NEW[kind]());
+}
+brainOf('gull');
 const REPLAY_MAX = 400, DIARY_MAX = 40;
 SAVE_TOWN.push('BRAINS');                  // the learning is the town's, not the day's
 
@@ -149,7 +161,19 @@ const DECISIONS = {
      a crowd of them is a fright. */
   gulls: { kind:'granny', senses:grannySenses,
            actions:['feed', 'walk on'],
-           hand:function(){ return 'feed'; } }
+           hand:function(){ return 'feed'; } },
+
+  /* ---- the gulls. Every few seconds on the ground: forage (what a gull has
+     always done - crumbs first, then tyre rubber), join the others, or loaf.
+     The hand-written gull forages. */
+  gullNext: { kind:'gull', senses:gullSenses,
+              actions:['forage', 'flock', 'loaf'],
+              hand:function(){ return 'forage'; } },
+  /* A car coming: fly, or hold its nerve a moment (a really close one is
+     instinct, not a choice - 12-beings.js). The hand-written gull flies. */
+  gullThreat: { kind:'gull', senses:gullSenses,
+                actions:['fly', 'hold'],
+                hand:function(){ return 'fly'; } }
 };
 
 /* ---------------------------------------------------------------- a granny's moments
@@ -229,6 +253,7 @@ function grannyMoment(b, dt){
         b.gullAsk = simClock;
         if (decide('gulls', b, { gull:gl }) === 'feed'){
           b.feedT = 15 + RND.beings() * 15;
+          b.crumbs = 6 + Math.floor(RND.beings() * 7);       // a handful - they run out
           b.feeds = (b.feeds || 0) + 1; b.mobbedNoted = false;
           b.feedFace = Math.atan2(gl.y - b.y, gl.x - b.x);
           if (!CENSUS.mute) CENSUS.ev.fedGulls = (CENSUS.ev.fedGulls || 0) + 1;
@@ -265,7 +290,7 @@ function nearestGull(b, r){
 function grannyFeeding(g){
   let best = null, bd = 30;
   for (const o of BEINGS){
-    if (o.kind !== 'granny' || !(o.feedT > 0) || beingAbsent(o)) continue;
+    if (o.kind !== 'granny' || !(o.feedT > 0) || !(o.crumbs > 0) || beingAbsent(o)) continue;
     const d = Math.hypot(o.x - g.x, o.y - g.y);
     if (d < bd){ bd = d; best = o; }
   }
@@ -380,6 +405,126 @@ function somebodyNear(b, r){
   return false;
 }
 
+/* ================================================================ the gulls
+   Thomas, 2026-10-13: a flocking behaviour that makes them happy to be around
+   someone - a gull or a person, not a fox or a car. So a gull feels good in
+   company and can choose to go and find some; food is still the main prize,
+   and crumbs are a real handful now (a granny scatters 6-12), so a gull in a
+   crowd round a granny is happier but gets less lunch. No snatching (Thomas). */
+const GULL_FEEL = {
+  food:0.25,            // each peck of rubber or crumb
+  companyPerMin:0.3,    // a gull or a person within a few metres
+  foxPerMin:-0.4,       // a fox about
+  fright:-0.3,          // a car going by too close
+  flyPerMin:-0.1        // flying is work
+};
+const GULL_SECS = 20;   // a gull's choice is judged by the next twenty seconds
+const COMPANY_KINDS = { gull:1, granny:1, shopper:1, trolleyboy:1, manager:1 };
+function gullFelt(b, part, v){
+  b.feel = (b.feel || 0) + v;
+  const f = b.feelBy || (b.feelBy = {});
+  f[part] = (f[part] || 0) + v;
+  if (!CENSUS.mute) brainOf('gull').life.feel += v;
+}
+function gullCompanyNear(b, r){
+  for (const o of BEINGS){
+    if (o === b || !COMPANY_KINDS[o.kind] || beingAbsent(o)) continue;
+    if (o.kind === 'gull' && o.z > 0.6) continue;
+    if (Math.hypot(o.x - b.x, o.y - b.y) < r) return o;
+  }
+  return null;
+}
+/* Where the nearest company is, within thirty metres: a spot just beside it. */
+function gullFlockTarget(b){
+  let best = null, bd = 30;
+  for (const o of BEINGS){
+    if (o === b || !COMPANY_KINDS[o.kind] || beingAbsent(o)) continue;
+    if (o.kind === 'gull' && o.z > 0.6) continue;
+    const d = Math.hypot(o.x - b.x, o.y - b.y);
+    if (d < bd){ bd = d; best = o; }
+  }
+  if (!best) return null;
+  const a = Math.atan2(b.y - best.y, b.x - best.x);
+  return [best.x + Math.cos(a) * 1.2, best.y + Math.sin(a) * 1.2];
+}
+function gullSenses(b){
+  const one = function(x){ return Math.max(0, Math.min(1, x)); };
+  let rub = 0;
+  for (let i = RUB.length - 1; i >= 0 && i > RUB.length - 240; i--){
+    const r = RUB[i];
+    if (!r) continue;
+    const d = Math.hypot(r[0] - b.x, r[1] - b.y);
+    if (d < 26) rub = Math.max(rub, 1 - d / 26);
+  }
+  const cg = grannyFeeding(b);
+  let gulls = 0, people = 0, fox = 0, near = 0;
+  for (const o of BEINGS){
+    if (o === b || beingAbsent(o)) continue;
+    const d = Math.hypot(o.x - b.x, o.y - b.y);
+    if (o.kind === 'fox'){ if (d < 15) fox = Math.max(fox, 1 - d / 15); continue; }
+    if (!COMPANY_KINDS[o.kind]) continue;
+    if (d < 30) near = Math.max(near, 1 - d / 30);
+    if (d < 6){ if (o.kind === 'gull') gulls++; else people++; }
+  }
+  return [
+    rub,
+    cg ? one(1 - Math.hypot(cg.x - b.x, cg.y - b.y) / 30) : 0,
+    one(gulls / 5),
+    one(people / 3),
+    gullCompanyNear(b, 4) ? 1 : 0,
+    near,
+    fox,
+    carThreat(b),
+    1 - one(b.full || 0),
+    b.z > 0.2 ? 1 : 0,
+    daylight(),
+    one(WX.rain)
+  ];
+}
+const GULL_SENSES = ['rubber in sight', 'crumbs going', 'gulls nearby', 'people nearby', 'in company now',
+  'nearest company', 'a fox about', 'a car coming', 'hungry', 'in the air', 'daylight', 'rain'];
+/* Every step, from the gull's own behaviour (12-beings.js): how it feels, and
+   choices whose twenty seconds are up are settled - learned from at once,
+   since a gull has no end to its day the way a granny's visit does. */
+function gullFeel(b, dt){
+  if (beingAbsent(b) || b.held) return;
+  const F = GULL_FEEL, m = dt / 60, L = brainOf('gull').life, live = !CENSUS.mute;
+  if (live) L.mins += m;
+  b.full = (b.full || 0) * Math.exp(-dt / 60);
+  const fed = b.fed || 0;
+  if (fed > (b.fedFelt || 0)){
+    const n = fed - (b.fedFelt || 0);
+    gullFelt(b, 'food', F.food * n); b.full += 0.25 * n; b.fedFelt = fed;
+    if (live) L.food += n;
+  }
+  if (b.z <= 0.6 && gullCompanyNear(b, 4)){ gullFelt(b, 'company', F.companyPerMin * m); if (live) L.flock += m; }
+  if (b.z > 0.2) gullFelt(b, 'flying', F.flyPerMin * m);
+  b.frightCool = (b.frightCool || 0) - dt;
+  if (b.frightCool <= 0 && b.z < 0.6){
+    let close = Math.hypot(car.vx, car.vy) > 2 && Math.hypot(car.x - b.x, car.y - b.y) < 2.5;
+    if (!close) for (const c of CARS)
+      if (Math.abs(c.spd) > 2 && Math.hypot(c.x - b.x, c.y - b.y) < 2.5){ close = true; break; }
+    if (close){ gullFelt(b, 'fright', F.fright); b.frightCool = 3; if (live) L.frights++; }
+  }
+  for (const o of BEINGS)
+    if (o.kind === 'fox' && !beingAbsent(o) && Math.hypot(o.x - b.x, o.y - b.y) < 6){ gullFelt(b, 'fox', F.foxPerMin * m); break; }
+  /* Settle the choices whose twenty seconds are up. */
+  if (b.diary && b.diary.length){
+    const kb = brainOf('gull'), done = [];
+    while (b.diary.length && simClock - b.diary[0].t >= GULL_SECS){
+      const e = b.diary.shift();
+      if (e.f0 === undefined) continue;
+      e.credit = +((b.feel || 0) - e.f0).toFixed(4);
+      const rec = { d:e.d, s:e.s, a:e.a, credit:e.credit, score:null, gull:b.cid };
+      kb.replay.push(rec);
+      if (kb.replay.length > REPLAY_MAX) kb.replay.shift();
+      if (kb.tap) kb.tap.push(rec);
+      done.push(e);
+    }
+    if (done.length && kb.policy === 'net') brainLearn(kb, b.brain || null, done, 'gull');
+  }
+}
+
 /* Where she thinks she parked: where she DID park last time she came, or -
    if this is the first time we have seen her drive - her usual sort of spot,
    from who she is. */
@@ -413,9 +558,9 @@ const POLICIES = {
      own dials, and one picked by those chances - not always the likeliest,
      which is what keeps her from being a machine. */
   net: function(dp, b, s, kb, pb, ctx, name){
-    const net = grannyHive(kb);
+    const net = kindHive(kb, dp.kind);
     if (!net) return dp.hand(b, ctx);
-    const c = netChances(netForward(net, grannyInput(s, name)).z, GRANNY_SLOTS[name], pb && pb.dials);
+    const c = netChances(netForward(net, brainInput(s, name)).z, brainSlots(name), pb && pb.dials);
     let r = RND.brains();
     for (let i = 0; i < c.p.length; i++){ r -= c.p[i]; if (r <= 0) return i; }
     return c.p.length - 1;
@@ -434,24 +579,31 @@ const POLICIES = {
    (brains/granny.brain.js, trained in the lab). */
 /* A brain wired for a different menu (an older save, an older file) is no use
    to her: it is set aside and she goes on the hand-written choices. */
-function grannyFits(n){ return !!(n && n.w1 && n.nIn === GRANNY_SHAPE.nIn && n.nOut === GRANNY_SHAPE.nOut); }
-function grannyHive(kb){
-  if (grannyFits(kb.kind)) return kb.kind;
-  if (window.GRANNY_BRAIN && grannyFits(window.GRANNY_BRAIN.net)){ kb.kind = netCopy(window.GRANNY_BRAIN.net); return kb.kind; }
+function kindFits(n, kind){
+  const sh = WIRING[kind].shape;
+  return !!(n && n.w1 && n.nIn === sh.nIn && n.nOut === sh.nOut);
+}
+function kindHive(kb, kind){
+  if (kindFits(kb.kind, kind)) return kb.kind;
+  const shipped = window[WIRING[kind].shipped];
+  if (shipped && kindFits(shipped.net, kind)){ kb.kind = netCopy(shipped.net); return kb.kind; }
   return null;
 }
-function grannyDials(pb){
+function kindDials(pb, kind){
   if (!pb.dials) pb.dials = [];
-  while (pb.dials.length < GRANNY_SHAPE.nOut) pb.dials.push(0);   // the menu grew
+  while (pb.dials.length < WIRING[kind].shape.nOut) pb.dials.push(0);   // the menu grew
   return pb.dials;
 }
+function grannyHive(kb){ return kindHive(kb, 'granny'); }
+function grannyDials(pb){ return kindDials(pb, 'granny'); }
 /* Learning as the game goes: after her day, each choice she made gets a
    little likelier if what followed it beat what usually follows that kind of
    choice, a little less if not. The yardstick is per decision (a chat is not
    measured against a lost car). The hive learns slowly from everybody; her
    dials faster, from her alone. */
-function grannyLearn(kb, pb, diary){
-  const net = grannyHive(kb);
+function grannyLearn(kb, pb, diary){ brainLearn(kb, pb, diary, 'granny'); }
+function brainLearn(kb, pb, diary, kind){
+  const net = kindHive(kb, kind);
   if (!net || !diary.length) return;
   const cb = kb.cbase || (kb.cbase = {});
   const adv = diary.map(function(e){
@@ -463,16 +615,16 @@ function grannyLearn(kb, pb, diary){
   if (kb.learnRate > 0){
     const acc = netZero(net);
     diary.forEach(function(e, i){
-      if (adv[i]) netGrad(net, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv[i], acc, pb && pb.dials);
+      if (adv[i]) netGrad(net, brainInput(e.s, e.d), brainSlots(e.d), e.a, adv[i], acc, pb && pb.dials);
     });
     netStep(net, acc, kb.learnRate / diary.length, 0.05);
   }
   if (pb && kb.dialRate > 0){
-    const dl = grannyDials(pb);
+    const dl = kindDials(pb, kind);
     diary.forEach(function(e, k){
       if (!adv[k]) return;
-      const sl = GRANNY_SLOTS[e.d];
-      const c = netChances(netForward(net, grannyInput(e.s, e.d)).z, sl, dl);
+      const sl = brainSlots(e.d);
+      const c = netChances(netForward(net, brainInput(e.s, e.d)).z, sl, dl);
       for (let i = 0; i < sl.length; i++){
         dl[sl[i]] += kb.dialRate * adv[k] * ((i === e.a ? 1 : 0) - c.p[i]);
         dl[sl[i]] = Math.max(-1.5, Math.min(1.5, dl[sl[i]]));       // a leaning, not a personality transplant
@@ -486,13 +638,15 @@ function grannyLearn(kb, pb, diary){
 const GRANNY_BRAIN_V = 1;
 function decide(name, b, ctx){
   const dp = DECISIONS[name];
-  const kb = BRAINS[dp.kind];
+  const kb = brainOf(dp.kind);
   if (dp.kind === 'granny' && (kb.v || 0) < GRANNY_BRAIN_V){
     kb.v = GRANNY_BRAIN_V; kb.policy = 'net'; kb.learnRate = 0; kb.dialRate = 0.05; kb.kind = {};
   }
   const s = dp.senses(b, ctx);
   const pol = POLICIES[kb.policy] || POLICIES.hand;
-  const pb = b.res ? (b.res.brain || (b.res.brain = { n:0, mean:0, bias:{} })) : null;
+  /* Her own dials live with the resident; a gull keeps its own on itself. */
+  const pb = b.res ? (b.res.brain || (b.res.brain = { n:0, mean:0, bias:{} }))
+           : b.kind === 'gull' ? (b.brain || (b.brain = { n:0, mean:0, bias:{} })) : null;
   let a = pol(dp, b, s, kb, pb, ctx, name);
   if (typeof a === 'string') a = dp.actions.indexOf(a);
   if (!(a >= 0 && a < dp.actions.length)) a = dp.actions.indexOf(dp.hand(b, ctx));

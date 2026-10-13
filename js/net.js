@@ -137,3 +137,28 @@ function grannyInput(s, name){
   for (const d of GRANNY_DECS) x.push(d === name ? 1 : 0);
   return x;
 }
+
+/* ---------------------------------------------------------------- the gull's wiring
+   12 senses and which of its 2 decisions; options: forage / join the others /
+   loaf, and fly / hold its nerve. Smaller than a granny: a simpler life. */
+const GULL_DECS = ['gullNext', 'gullThreat'];
+const GULL_SLOTS = { gullNext:[0, 1, 2], gullThreat:[3, 4] };
+const GULL_SHAPE = { nIn:14, nHid:8, nOut:5 };
+function gullInput(s, name){
+  const x = s.slice();
+  for (const d of GULL_DECS) x.push(d === name ? 1 : 0);
+  return x;
+}
+
+/* ---------------------------------------------------------------- every kind
+   Which wiring a decision belongs to, so the game, the lab and the trainer can
+   handle any kind of being the same way. `shipped` is the global a trained
+   brain file sets (brains/<kind>.brain.js). */
+const WIRING = {
+  granny:{ decs:GRANNY_DECS, slots:GRANNY_SLOTS, shape:GRANNY_SHAPE, input:grannyInput, shipped:'GRANNY_BRAIN' },
+  gull:  { decs:GULL_DECS,   slots:GULL_SLOTS,   shape:GULL_SHAPE,   input:gullInput,   shipped:'GULL_BRAIN' }
+};
+const DEC_KIND = {};
+for (const k in WIRING) for (const d of WIRING[k].decs) DEC_KIND[d] = k;
+function brainInput(s, d){ return WIRING[DEC_KIND[d]].input(s, d); }
+function brainSlots(d){ return WIRING[DEC_KIND[d]].slots[d]; }

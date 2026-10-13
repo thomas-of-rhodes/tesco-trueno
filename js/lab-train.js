@@ -3,27 +3,30 @@
    tools/train.js (in the terminal, 2026-10-13), so both run the identical
    algorithm. Needs net.js. */
 
-/* The hand-written granny, asked for by name: since v1.0 the game's default is
-   the brain, so an arm that says nothing would be the brain. */
-const HAND_CODE = "BRAINS.granny.policy = 'hand'; BRAINS.granny.tap = [];";
-function netCode(hive){
-  return "BRAINS.granny.policy = 'net'; BRAINS.granny.kind = " + JSON.stringify(hive) +
-         "; BRAINS.granny.learnRate = 0; BRAINS.granny.dialRate = 0; BRAINS.granny.tap = [];";
+/* The hand-written one, asked for by name: since granny v1.0 the game's default
+   for a kind can be its brain, so an arm that says nothing might be the brain. */
+function handCode(kind){ return "BRAINS." + kind + ".policy = 'hand'; BRAINS." + kind + ".tap = [];"; }
+const HAND_CODE = handCode('granny');
+function netCode(hive, kind){
+  const k = 'BRAINS.' + (kind || 'granny');
+  return k + ".policy = 'net'; " + k + ".kind = " + JSON.stringify(hive) +
+         "; " + k + ".learnRate = 0; " + k + ".dialRate = 0; " + k + ".tap = [];";
 }
 function mean(a){ return a.length ? a.reduce(function(s, x){ return s + x; }, 0) / a.length : null; }
 
 /* Round 0: copy the hand-written granny from her own decisions. */
-function copyHand(samples){
-  const hive = netNew(GRANNY_SHAPE.nIn, GRANNY_SHAPE.nHid, GRANNY_SHAPE.nOut, 7);
+function copyHand(samples, kind){
+  const sh = WIRING[kind || 'granny'].shape;
+  const hive = netNew(sh.nIn, sh.nHid, sh.nOut, 7);
   const st = {};
   for (let ep = 0; ep < 300; ep++){
     const acc = netZero(hive);
-    for (const e of samples) netGrad(hive, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, 1 / samples.length, acc);
+    for (const e of samples) netGrad(hive, brainInput(e.s, e.d), brainSlots(e.d), e.a, 1 / samples.length, acc);
     netAdam(hive, acc, st, 0.02);
   }
   let hit = 0;
   for (const e of samples){
-    const c = netChances(netForward(hive, grannyInput(e.s, e.d)).z, GRANNY_SLOTS[e.d]);
+    const c = netChances(netForward(hive, brainInput(e.s, e.d)).z, brainSlots(e.d));
     let best = 0; for (let i = 1; i < c.p.length; i++) if (c.p[i] > c.p[best]) best = i;
     if (best === e.a) hit++;
   }
@@ -53,7 +56,7 @@ function learnFrom(hive, st, samples, lr){
   }
   /* How likely each choice was under the brain that made it (this round's). */
   const old = samples.map(function(e){
-    return netChances(netForward(hive, grannyInput(e.s, e.d)).z, GRANNY_SLOTS[e.d]).p[e.a];
+    return netChances(netForward(hive, brainInput(e.s, e.d)).z, brainSlots(e.d)).p[e.a];
   });
   const order = samples.map(function(e, i){ return i; });
   const r = netRng(samples.length * 7919 + (st.t || 0));
@@ -68,7 +71,7 @@ function learnFrom(hive, st, samples, lr){
       for (const k of part){
         const e = samples[k];
         const adv = (e.credit - norm[e.d].m) / norm[e.d].sd;
-        const x = grannyInput(e.s, e.d), sl = GRANNY_SLOTS[e.d];
+        const x = brainInput(e.s, e.d), sl = brainSlots(e.d);
         const ratio = netChances(netForward(hive, x).z, sl).p[e.a] / Math.max(1e-9, old[k]);
         seen++;
         if ((adv > 0 && ratio > 1 + LEARN_CLIP) || (adv < 0 && ratio < 1 - LEARN_CLIP)){ clipped++; continue; }
@@ -91,7 +94,17 @@ function trainStats(xs){
   const sd = n > 1 ? Math.sqrt(xs.reduce(function(a, b){ return a + (b - m) * (b - m); }, 0) / (n - 1)) : 0;
   return { n:n, m:m, se:n > 1 ? sd / Math.sqrt(n) : null };
 }
-function roundRow(k, specs, res){
+/* What each kind is judged by, and the readings shown beside it: [label, metric]. */
+const KIND_SCORE = { granny:'grannyDay', gull:'gullHappy' };
+const KIND_READS = {
+  granny:[['chats', 'grannyChats'], ['company', 'grannyCompany'], ['wet s', 'grannyWet'], ['sheltered', 'sheltered'],
+          ['linger', 'lingered'], ['wander', 'wandered'], ['fed gulls', 'fedGulls'], ['mobbed', 'mobbed']],
+  gull:  [['food/min', 'gullFood'], ['in company', 'gullFlock'], ['frights/hr', 'gullFright'],
+          ['held nerve', 'gullHeld'], ['crumbs', 'gullCrumbs'], ['fed by grannies', 'fedGulls'], ['mobbing', 'mobbed']]
+};
+function roundRow(k, specs, res, kind){
+  kind = kind || 'granny';
+  const SK = KIND_SCORE[kind];
   const errs = res.filter(function(r){ return !r || r.error; });
   const net = [], hand = [], diffs = [], samples = [];
   const pick = function(arm, key){
@@ -100,10 +113,10 @@ function roundRow(k, specs, res){
   };
   for (let i = 0; i < specs.length; i += 2){
     const a = res[i], b = res[i + 1];
-    if (a && a.metrics && a.metrics.grannyDay !== null) net.push(a.metrics.grannyDay);
-    if (b && b.metrics && b.metrics.grannyDay !== null) hand.push(b.metrics.grannyDay);
-    if (a && a.metrics && b && b.metrics && a.metrics.grannyDay !== null && b.metrics.grannyDay !== null)
-      diffs.push(a.metrics.grannyDay - b.metrics.grannyDay);
+    if (a && a.metrics && a.metrics[SK] !== null) net.push(a.metrics[SK]);
+    if (b && b.metrics && b.metrics[SK] !== null) hand.push(b.metrics[SK]);
+    if (a && a.metrics && b && b.metrics && a.metrics[SK] !== null && b.metrics[SK] !== null)
+      diffs.push(a.metrics[SK] - b.metrics[SK]);
     if (a && a.tap) for (const e of a.tap) samples.push(e);
   }
   const d = trainStats(diffs);
@@ -117,6 +130,7 @@ function roundRow(k, specs, res){
                 wander:mean(pick('net', 'wandered')), wanderH:mean(pick('hand', 'wandered')),
                 backIn:mean(pick('net', 'backIn')), gulls:mean(pick('net', 'fedGulls')), gullsH:mean(pick('hand', 'fedGulls')),
                 mobbed:mean(pick('net', 'mobbed')), mobbedH:mean(pick('hand', 'mobbed')),
-                n:samples.length, errs:errs.length, err:errs.length ? String((errs[0] || {}).error || 'no result').slice(0, 300) : null };
+                n:samples.length, errs:errs.length, err:errs.length ? String((errs[0] || {}).error || 'no result').slice(0, 300) : null,
+                reads:KIND_READS[kind].map(function(q){ return [q[0], mean(pick('net', q[1])), mean(pick('hand', q[1]))]; }) };
   return { row:row, samples:samples };
 }

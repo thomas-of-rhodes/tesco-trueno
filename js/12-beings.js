@@ -385,12 +385,22 @@ const BEHAVE = {
   /* The real menace. Eats rubber off the asphalt and whatever the shoppers drop,
      and takes off the moment a car means it. */
   gull: function(b, dt){
+    gullFeel(b, dt);                       // how it feels, and its choices settled (16-brains.js)
     const threat = carThreat(b);
-    if (threat > 0.25 && b.z < 0.2){
-      b.state = poseOr(b, 'wings-out'); b.vz = 3.4;
-      const away = Math.atan2(b.y - car.y, b.x - car.x);
-      b.tx = b.x + Math.cos(away) * 14; b.ty = b.y + Math.sin(away) * 14;
-      b.hold = 2.2;
+    if (b.nerveT > 0) b.nerveT -= dt;
+    if (threat > 0.25 && b.z < 0.2 && !(b.nerveT > 0)){
+      /* Fly, or hold its nerve a moment longer (16-brains.js). A car this close
+         is instinct, not a choice: no gull learns to be run over. */
+      const act = threat > 0.75 ? 'fly' : decide('gullThreat', b, { threat:threat });
+      if (act === 'fly'){
+        b.state = poseOr(b, 'wings-out'); b.vz = 3.4;
+        const away = Math.atan2(b.y - car.y, b.x - car.x);
+        b.tx = b.x + Math.cos(away) * 14; b.ty = b.y + Math.sin(away) * 14;
+        b.hold = 2.2;
+      } else {
+        b.nerveT = 0.8;
+        if (!CENSUS.mute) brainOf('gull').life.held++;
+      }
     }
     if (b.z > 0.2 || b.hold > 0){
       b.hold -= dt; b.state = poseOr(b, 'wings-out');
@@ -457,14 +467,25 @@ const BEHAVE = {
     }
     /* Rubber is food. Finding it is why RUB has always been kept in world
        coordinates rather than painted straight onto the canvas. */
+    /* Every few seconds: forage (all that follows), join the others, or loaf
+       (16-brains.js). The hand-written gull always forages. */
+    const tick1 = b.hold <= 0 && (b.t % 1) < dt;
+    if (tick1 && !(simClock < (b.planUntil || 0))){ b.plan = decide('gullNext', b); b.planUntil = simClock + 3; }
+    const plan = b.plan || 'forage';
+    if (tick1 && plan === 'flock'){
+      const p = gullFlockTarget(b);
+      if (p){ b.tx = p[0]; b.ty = p[1]; b.rubI = undefined; b.atCrumbs = null; }
+    } else if (tick1 && plan === 'loaf'){
+      b.tx = b.x; b.ty = b.y; b.rubI = undefined; b.atCrumbs = null;
+    }
     /* A granny scattering crumbs beats tyre rubber, every time (16-brains.js). */
-    const crumbs = (b.hold <= 0 && (b.t % 1) < dt) ? grannyFeeding(b) : null;
+    const crumbs = (tick1 && plan === 'forage') ? grannyFeeding(b) : null;
     if (crumbs){
       const a = crumbs.feedFace !== undefined ? crumbs.feedFace : crumbs.h;
       b.tx = crumbs.x + Math.cos(a) * 1.4 + (RND.beings() - 0.5) * 1.8;
       b.ty = crumbs.y + Math.sin(a) * 1.4 + (RND.beings() - 0.5) * 1.8;
-      b.rubI = undefined; b.atCrumbs = true;
-    } else if (b.hold <= 0 && RUB.length && (b.t % 1) < dt){
+      b.rubI = undefined; b.atCrumbs = crumbs;
+    } else if (tick1 && plan === 'forage' && RUB.length){
       let bd = 26, bi = -1;
       for (let i = RUB.length - 1; i >= 0 && i > RUB.length - 240; i--){
         const r = RUB[i];
@@ -481,11 +502,15 @@ const BEHAVE = {
     const there = walkTo(b, dt, b.k.speed * (0.5 + 0.5 * Math.sin(b.anim * 3) ** 2));
     if (there){
       b.state = poseOr(b, b.fed > 6 ? 'overfed' : 'alert');
-      if (b.atCrumbs){ b.atCrumbs = false; b.fed++; }   // a crumb
+      /* A crumb - if there are any left by the time it gets there. */
+      if (b.atCrumbs){
+        const g = b.atCrumbs; b.atCrumbs = null;
+        if (g.crumbs > 0){ g.crumbs--; b.fed++; if (!CENSUS.mute) brainOf('gull').life.crumbs++; }
+      }
       if (b.rubI !== undefined && b.rubI < RUB.length){
         RUB.splice(b.rubI, 1); b.rubI = undefined; b.fed++;   // pecked up
       }
-      if (RND.beings() < 0.02) wanderTarget(b, 6);
+      if (plan === 'forage' && RND.beings() < 0.02) wanderTarget(b, 6);
     } else b.state = poseOr(b, 'loaf');
   },
 

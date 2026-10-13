@@ -3,8 +3,8 @@
    with no browser to doze off when its window is hidden. Laptop only - the
    game itself stays a plain web page.
 
-     node tools/train.js [--rounds 8] [--days 11] [--secs 600] [--seed 1000]
-                         [--lr 0.01] [--threads 22] [--fresh]
+     node tools/train.js [--kind granny|gull] [--rounds 8] [--days 11] [--secs 600]
+                         [--seed 1000] [--lr 0.01] [--threads 22] [--fresh]
 
    Round 0 copies the hand-written granny; each round after runs the brain and
    the hand-written granny on the same new days and learns from the brain's
@@ -25,7 +25,7 @@ const arg = function(name, def){
   return i >= 0 ? process.argv[i + 1] : def;
 };
 const fresh = process.argv.indexOf('--fresh') >= 0;
-const STATE = path.join(__dirname, '.train-state.json');
+const STATE = path.join(__dirname, '.train-state' + (arg('kind', 'granny') === 'granny' ? '' : '-' + arg('kind', 'granny')) + '.json');
 
 /* The same maths as the lab: net.js and lab-train.js, loaded as they are. */
 for (const f of ['js/net.js', 'js/lab-train.js'])
@@ -34,8 +34,12 @@ const G = globalThis;
 /* A top-level const in a script loaded this way is not a property of the
    global object - reading it off G gave undefined, so the hand-written days
    kept no diary and round 0 had nothing to copy (2026-10-13). By name. */
-const HAND_CODE = vm.runInThisContext('HAND_CODE');
-if (typeof HAND_CODE !== 'string') throw new Error('HAND_CODE missing from js/lab-train.js');
+const KIND = arg('kind', 'granny');
+const WIRE = vm.runInThisContext('WIRING')[KIND];
+if (!WIRE) throw new Error('no wiring for ' + KIND + ' in js/net.js');
+const SCORE = vm.runInThisContext('KIND_SCORE')[KIND];
+const HAND_CODE = G.handCode(KIND);
+if (typeof HAND_CODE !== 'string') throw new Error('handCode missing from js/lab-train.js');
 
 function runOne(seed, ticks, code){
   return new Promise(function(done){
@@ -94,29 +98,29 @@ async function main(){
   if (T.next === 0){
     const seeds = []; for (let i = 0; i < c.S; i++) seeds.push(c.seed0 + i);
     const r0 = await runAll(seeds.map(function(sd){ return { seed:sd, ticks:c.ticks, code:HAND_CODE }; }), par,
-                            function(f, n){ say('round 0: watching the hand-written grannies, ' + f + ' of ' + n); });
+                            function(f, n){ say('round 0: watching the hand-written ' + KIND + 's, ' + f + ' of ' + n); });
     const samples = [];
     for (const r of r0) if (r && r.tap) for (const e of r.tap) samples.push(e);
     const errs = r0.filter(function(r){ return !r || r.error; });
     if (errs.length) console.log('\n' + errs.length + ' runs failed: ' + String(errs[0].error).slice(0, 400));
     if (!samples.length){ console.log('round 0 collected no decisions - stopping rather than train from noise'); process.exit(1); }
-    const cp = G.copyHand(samples);
+    const cp = G.copyHand(samples, KIND);
     T.hive = cp.hive;
-    const hd = r0.filter(function(r){ return r && r.metrics && r.metrics.grannyDay !== null; }).map(function(r){ return r.metrics.grannyDay; });
+    const hd = r0.filter(function(r){ return r && r.metrics && r.metrics[SCORE] !== null; }).map(function(r){ return r.metrics[SCORE]; });
     T.rows.push({ round:0, note:'copied ' + samples.length + ' decisions, ' + (100 * cp.acc).toFixed(0) + '% the same', hand:G.mean(hd) });
     T.next = 1; save();
-    say(''); console.log('\rround 0: ' + T.rows[0].note + ', hand-written day ' + num(T.rows[0].hand));
-    console.log('round  brain  hand   brain-hand  +/-    chats(b/h)   company(b/h)  wet s(b/h)   sheltered(b/h) gave up   linger(b/h)  wander(b/h)  fed gulls(b/h) mobbed(b/h)');
+    say(''); console.log('\rround 0: ' + T.rows[0].note + ', hand-written ' + SCORE + ' ' + num(T.rows[0].hand));
+    console.log('round  brain  hand   brain-hand  +/-   then each reading as brain/hand');
   }
   for (let k = T.next; k <= c.R; k++){
     const specs = [];
     for (let i = 0; i < c.S; i++){
       const sd = c.seed0 + k * c.S + i;
-      specs.push({ seed:sd, ticks:c.ticks, code:G.netCode(T.hive), arm:'net' });
+      specs.push({ seed:sd, ticks:c.ticks, code:G.netCode(T.hive, KIND), arm:'net' });
       specs.push({ seed:sd, ticks:c.ticks, code:HAND_CODE, arm:'hand' });
     }
     const res = await runAll(specs, par, function(f, n){ say('round ' + k + ' of ' + c.R + ': ' + f + ' of ' + n + ' days'); });
-    const rr = G.roundRow(k, specs, res);
+    const rr = G.roundRow(k, specs, res, KIND);
     const r = rr.row;
     T.rows.push(r);
     if (r.diff !== null && (!T.best || r.diff > T.best.diff)) T.best = { diff:r.diff, round:k, hive:G.netCopy(T.hive) };
@@ -125,10 +129,7 @@ async function main(){
     T.next = k + 1; save();
     say('');
     console.log('\r' + String(k).padStart(5) + num(r.net) + num(r.hand) + '   ' + num(r.diff) + '  ' + num(r.se) +
-                '   ' + num(r.chats) + '/' + num(r.chatsH) + '  ' + num(r.company) + '/' + num(r.companyH) +
-                '   ' + num(r.wet) + '/' + num(r.wetH) + '   ' + num(r.shelter) + '/' + num(r.shelterH) + '   ' + num(r.gaveUp) +
-                '   ' + num(r.linger) + '/' + num(r.lingerH) + '  ' + num(r.wander) + '/' + num(r.wanderH) +
-                '  ' + num(r.gulls) + '/' + num(r.gullsH) + '  ' + num(r.mobbed) + '/' + num(r.mobbedH) +
+                '  ' + r.reads.map(function(q){ return q[0] + ' ' + num(q[1]).trim() + '/' + num(q[2]).trim(); }).join(' | ') +
                 '   [' + r.steps + ' steps, ' + Math.round(100 * r.clipped) + '% held back]' +
                 (r.errs ? '   ' + r.errs + ' FAILED: ' + r.err : ''));
   }
@@ -136,15 +137,19 @@ async function main(){
   const mins = ((Date.now() - t0) / 60000).toFixed(1);
   if (T.best && T.best.diff > 0){
     const meta = { trained:new Date().toISOString(), round:T.best.round, cfg:c, rows:T.rows };
-    const out = path.join(root, 'brains', 'granny.brain.js');
+    /* A CANDIDATE, never the shipped file: shipping is a decision, made after
+       checking it on days it has never seen (tools/ab.js with SEED0). */
+    const name = KIND + '.candidate.js';
+    const out = path.join(root, 'brains', name);
+    const sh = WIRE.shape;
     fs.mkdirSync(path.dirname(out), { recursive:true });
-    fs.writeFileSync(out, '/* The granny hive, trained by tools/train.js (' + meta.trained + ', round ' + meta.round + ').\n' +
-      '   22 neurons: 17 inputs -> 12 hidden -> 10 options. A town with no brain of its\n' +
-      '   own starts from this one, once the game is switched to it. */\n' +
-      'window.GRANNY_BRAIN = ' + JSON.stringify({ meta:meta, net:T.best.hive }) + ';\n');
-    console.log('\ndone in ' + mins + ' min. Best: round ' + T.best.round + ' (' + num(T.best.diff) + ') -> brains/granny.brain.js');
+    fs.writeFileSync(out, '/* A ' + KIND + ' hive, trained by tools/train.js (' + meta.trained + ', round ' + meta.round + ').\n' +
+      '   ' + sh.nIn + ' inputs -> ' + sh.nHid + ' hidden -> ' + sh.nOut + ' options. A candidate: check it on fresh\n' +
+      '   days before it ships as brains/' + KIND + '.brain.js. */\n' +
+      'window.' + WIRE.shipped + ' = ' + JSON.stringify({ meta:meta, net:T.best.hive }) + ';\n');
+    console.log('\ndone in ' + mins + ' min. Best: round ' + T.best.round + ' (' + num(T.best.diff) + ') -> brains/' + name);
   } else {
-    console.log('\ndone in ' + mins + ' min. No round beat the hand-written granny, so no brain was written.');
+    console.log('\ndone in ' + mins + ' min. No round beat the hand-written ' + KIND + ', so no brain was written.');
   }
 }
 main().catch(function(e){ console.error(e); process.exit(1); });
