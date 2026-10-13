@@ -820,7 +820,23 @@ window.__person = function(q){
    left 18 cars stopped in the aisles and got 22-34 cars out in 900 s against
    41 at 20. The entrance is no longer the limit - manoeuvring in and out of
    bays in 6 m aisles is - so more cars is still just more jam. 20 stays. */
-const MAX_CARS = 20, OUT_RESERVE = 6;
+/* Arrivals and departures get a share each, not a pool (2026-10-13, measured in
+   the lab). The old rule held six slots back for departures but none for
+   arrivals, so departures alone could fill all twenty. Every day opens with
+   about forty more cars parked than the curve wants, the controller sends them
+   home four times faster than it lets anyone in, and at the moment an arrival
+   was refused there were typically thirteen cars driving OUT. Over 22 seeds of
+   five minutes: 9 turned away against 4.5 parked. Eight arriving at once is
+   what the capped rate needs (0.055 a second x a journey of 100-130 s); the
+   other twelve are for going home, and a driver who finds them all taken waits
+   by the car, which is what you do. 8/12 against the old pool: 2.9 turned away,
+   6.2 parked, journeys a little quicker, nothing lost from the census. */
+const MAX_CARS = 20, IN_SLOTS = 8;
+function inFlight(st0){
+  let n = 0;
+  for (const c of CARS) if (c.st0 === st0 && !c.done) n++;
+  return n;
+}
 /* Nothing may be created on top of a car already standing in the gate. Shift
    changes send staff cars in bursts, and five of them were made on the same
    spot, inside each other, where none could ever move again. */
@@ -829,8 +845,8 @@ function gateClear(){
   for (const c of CARS) if (!c.done && Math.hypot(c.x - g[0], c.y - g[1]) < 7) return false;
   return true;
 }
-function roomToArrive(){ return CARS.length < MAX_CARS - OUT_RESERVE && gateClear(); }
-function roomToLeave(){ return CARS.length < MAX_CARS; }
+function roomToArrive(){ return CARS.length < MAX_CARS && inFlight('in') < IN_SLOTS && gateClear(); }
+function roomToLeave(){ return CARS.length < MAX_CARS && inFlight('out') < MAX_CARS - IN_SLOTS; }
 function trafficStep(dt){
   /* Twice a second, not 120 times. This is a rate controller for something that
      happens every few seconds, and it was walking all 414 bays every physics
