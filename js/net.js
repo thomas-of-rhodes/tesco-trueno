@@ -77,12 +77,18 @@ function netChances(z, slots, bias){
   return { p:p, live:live };
 }
 /* Add coef x d log p(slots[a]) / d weights into `acc`. Returns the chances. */
-function netGrad(n, x, slots, a, coef, acc, bias){
+/* `smooth` (copying only): aim for "the hand-written choice about 1 - smooth of
+   the time", not every time. Copying a creature that NEVER varies (the gull
+   always forages, always flies) drove its logits into the cap, where there is
+   no slope left - and the copy could then never learn its way out of being a
+   copy (2026-10-13, the first gull training: flat, 0% clipped). */
+function netGrad(n, x, slots, a, coef, acc, bias, smooth){
   const f = netForward(n, x);
   const c = netChances(f.z, slots, bias);
   const dz = new Array(n.nOut).fill(0);
+  const sm = smooth || 0, rest = sm / slots.length;
   for (let i = 0; i < slots.length; i++)
-    if (c.live[i]) dz[slots[i]] = coef * ((i === a ? 1 : 0) - c.p[i]);
+    if (c.live[i]) dz[slots[i]] = coef * ((i === a ? 1 - sm + rest : rest) - c.p[i]);
   const dh = new Array(n.nHid).fill(0);
   for (let k = 0; k < n.nOut; k++){
     if (dz[k] === 0) continue;

@@ -14,14 +14,17 @@ function netCode(hive, kind){
 }
 function mean(a){ return a.length ? a.reduce(function(s, x){ return s + x; }, 0) / a.length : null; }
 
-/* Round 0: copy the hand-written granny from her own decisions. */
+/* Round 0: copy the hand-written one from its own decisions. */
+const COPY_SMOOTH = 0.1;
 function copyHand(samples, kind){
   const sh = WIRING[kind || 'granny'].shape;
   const hive = netNew(sh.nIn, sh.nHid, sh.nOut, 7);
   const st = {};
   for (let ep = 0; ep < 300; ep++){
     const acc = netZero(hive);
-    for (const e of samples) netGrad(hive, brainInput(e.s, e.d), brainSlots(e.d), e.a, 1 / samples.length, acc);
+    /* Copied to about 90%, not 100%: keeps a little curiosity, and keeps the
+       copy where learning can still move it (net.js, `smooth`). */
+    for (const e of samples) netGrad(hive, brainInput(e.s, e.d), brainSlots(e.d), e.a, 1 / samples.length, acc, null, COPY_SMOOTH);
     netAdam(hive, acc, st, 0.02);
   }
   let hit = 0;
