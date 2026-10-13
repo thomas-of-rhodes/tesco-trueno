@@ -33,7 +33,8 @@ function labMetrics(){
     vanishedCars:ev.carsVanished || 0, vanishedPeople:ev.peopleVanished || 0,
     invented:ev.inventedDrivers || 0,
     gdN:BRAINS.granny.days.n, gdSum:BRAINS.granny.days.sum, gdLost:BRAINS.granny.days.lost,
-    gdChats:BRAINS.granny.days.chats, gaveUp:ev.gaveUp || 0
+    gdChats:BRAINS.granny.days.chats, gdWet:BRAINS.granny.days.wet || 0, gaveUp:ev.gaveUp || 0,
+    misremembered:ev.misremembered || 0, sheltered:ev.sheltered || 0, forgot:ev.forgot || 0
   };
 }
 /* The rows lab.html shows, in order: [key, label, group, better]. `better` is
@@ -49,7 +50,11 @@ const LAB_ROWS = [
   ['grannyDay',    'a granny\'s day (score)',       'grannies',  'up'],
   ['grannyLost',   'seconds without her car, each', 'grannies',  'down'],
   ['grannyChats',  'chats, each',                   'grannies',  ''],
+  ['grannyWet',    'seconds out in the rain, each', 'grannies',  'down'],
+  ['misremembered','went to last time\'s space',    'grannies',  ''],
+  ['sheltered',    'waited out a shower',           'grannies',  ''],
   ['gaveUp',       'gave up on her car',            'grannies',  'down'],
+  ['forgot',       'forgot she drove (bus home)',   'grannies',  ''],
   ['gdN',          'grannies scored',               'grannies',  ''],
   ['bumps',        'Trueno: bumps',                 'trueno',    'down'],
   ['sulks',        'Trueno: sulks',                 'trueno',    'down'],
@@ -123,6 +128,7 @@ function labRun(cfg, post){
       r.grannyDay = r.gdN > 0 ? r.gdSum / r.gdN : null;
       r.grannyLost = r.gdN > 0 ? r.gdLost / r.gdN : null;
       r.grannyChats = r.gdN > 0 ? r.gdChats / r.gdN : null;
+      r.grannyWet = r.gdN > 0 ? r.gdWet / r.gdN : null;
       r.jammed = samples ? jammed / samples : null;
       const c = census();
       const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;

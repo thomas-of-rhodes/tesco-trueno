@@ -795,6 +795,8 @@ function stepBeings(dt){
        next - a bus would be twelve people with arrivedBy 'bus' and the identical
        life from the doors onwards. */
     if (b.life){
+      /* Her own moments - a chat, waiting out a shower (16-brains.js). */
+      if (b.kind === 'granny' && grannyMoment(b, dt)) continue;
       /* --- walking in from the entrance */
       if (b.life === 'arriving'){
         b.tx = g[0] + 6; b.ty = g[1];
@@ -843,6 +845,9 @@ function stepBeings(dt){
           CENSUS.ev.forgot = (CENSUS.ev.forgot || 0) + 1;
           censusNote('forgot her car', b.name);
         }
+        /* And one who does remember the car may remember the wrong DAY: she
+           sets off for where she parked it last time (16-brains.js). */
+        if (b.life === 'toCar' && b.kind === 'granny' && !CENSUS.mute) grannyMisremember(b);
         continue;
       }
       /* --- back to where they left it */
@@ -863,17 +868,28 @@ function stepBeings(dt){
            beside the car, had been hiding it. */
         if (bbx && Math.hypot(bbx.x - b.x, bbx.y - b.y) < 3.6){
           b.moving = false;
+          b.wrongSpot = null;                   // there it is - wherever she thought it was
+          /* Where she parked THIS time - which is the one she will remember next time. */
+          if (b.res) b.res.lastSpot = bayStand(bay);
           if (roomToLeave()){ beginDeparture(bay); b.gone = true; }
           /* No room on the aisle yet: wait by the car, which is what you do. */
           continue;
         }
         /* Head for where it is if it is still there - following it if it has
            shifted - and for where they LEFT it if it is not. */
-        const aim = bbx ? bayStand(bay) : b.parkedAt;
+        const aim = b.wrongSpot ? b.wrongSpot : bbx ? bayStand(bay) : b.parkedAt;
         b.tx = aim[0]; b.ty = aim[1];
         b.state = b.look;
         if (walkTo(b, dt, b.k.speed * 1.1)){
-          if (bbx){
+          if (b.wrongSpot){
+            /* Last time's space. Somebody else's car in it, or nobody's - and
+               the same muddle as a car that has genuinely gone. */
+            b.wrongSpot = null;
+            b.life = 'muddled';
+            b.muddleT = 3 + RND.beings() * 3.5;
+            b.ownBay = null;
+            b.lostAt = simClock;
+          } else if (bbx){
             /* Reached the spot but still not within reach of the car: let the
                proximity test above settle it next tick. */
           } else {

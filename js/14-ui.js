@@ -174,6 +174,13 @@ function thoughtOf(b){
                                                            'lovely day for the bus']);
   if (b.gaveUp && b.life === 'toExit') return pickLine(b, ['our Derek can come for it the morn',
                                                            'it\'ll turn up. things do.']);
+  if (gran && b.chatT > 0) return pickLine(b, ['...and HER with the new hip',
+                                                'well you never know, do you',
+                                                'terrible about the weather']);
+  if (gran && b.shelter) return pickLine(b, ['i\'ll wait till it goes off', 'it\'ll pass']);
+  if (gran && b.wrongSpot) return pickLine(b, ['just over here, i left it', 'by the trolleys, it was']);
+  if (gran && b.misremembered && (b.life === 'muddled' || b.life === 'hunting'))
+    return pickLine(b, ['that was LAST week. wasn\'t it.', 'i was sure it was here']);
   if (b.toWork) return pickLine(b, ['clocking on', 'early shift. again.', 'right. tills.']);
   if (b.staff && (b.life === 'toCar' || b.life === 'outDoors'))
     return pickLine(b, ['end of shift. finally.', 'home, feet up', 'never again. see you tomorrow.']);
