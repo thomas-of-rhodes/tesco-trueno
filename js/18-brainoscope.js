@@ -60,14 +60,20 @@ function scopeWhere(b){
   if (b.inStore) return 'in the shop';
   return 'gone home';
 }
-function drawBrainoscope(){
+/* `place` (the CCTV's brain quadrant): a function (W, H) -> [x, y, scale]
+   that puts the panel somewhere other than the dock, for the followed being. */
+function drawBrainoscope(place){
   if (!SCOPE.on || typeof castAt !== 'function' || !DECISIONS) return;
+  if (!place && VIEW === 'cctv') return;          // the CCTV draws its own (drawScopeCctv)
   /* Whoever is being followed - or, failing that, whoever is under the mouse. */
   let b = SCOPE.follow;
   if (b && BEINGS.indexOf(b) < 0){ b = SCOPE.follow = null; }      // gone for good
+  if (place && !b) return;
   if (b && beingAbsent(b)){
-    const W0 = 380, H0 = 34, sc0 = Math.min(1, (cv.width / dpr() - 16) / W0);
-    const at = scopeDock(W0, H0, sc0);
+    const W0 = 380, H0 = 34;
+    const pl = place ? place(W0, H0) : null;
+    const sc0 = pl ? pl[2] : Math.min(1, (cv.width / dpr() - 16) / W0);
+    const at = pl ? [pl[0], pl[1]] : scopeDock(W0, H0, sc0);
     g2.save(); g2.translate(at[0], at[1]); g2.scale(sc0, sc0);
     g2.fillStyle = 'rgba(9,11,13,0.94)'; g2.strokeStyle = '#3a444c'; g2.lineWidth = 1;
     g2.fillRect(0, 0, W0, H0); g2.strokeRect(0.5, 0.5, W0 - 1, H0 - 1);
@@ -85,7 +91,7 @@ function drawBrainoscope(){
     b = onPanel && SCOPE.last && BEINGS.indexOf(SCOPE.last) >= 0 && !beingAbsent(SCOPE.last) ? SCOPE.last : castAt(HOVER.mx, HOVER.my);
   }
   if (!b || !b.kind || !WIRING[b.kind]) return;
-  if (b === SCOPE.follow) scopeHalo(b);
+  if (b === SCOPE.follow && !place) scopeHalo(b);
   const kb = brainOf(b.kind);
   const net = kindHive(kb, b.kind);
   if (!net) return;
@@ -108,8 +114,9 @@ function drawBrainoscope(){
   const W = 380, H = top + lh + 46;
   const vw = cv.width / dpr(), vh = cv.height / dpr();
   /* A narrow window gets a smaller scope, not half of one. */
-  const sc = Math.min(1, (vw - 16) / W, (vh - 56) / H);
-  const at = scopeDock(W, H, sc);
+  let sc, at;
+  if (place){ const pl = place(W, H); at = [pl[0], pl[1]]; sc = pl[2]; }
+  else { sc = Math.min(1, (vw - 16) / W, (vh - 56) / H); at = scopeDock(W, H, sc); }
   SCOPE.geo = { x:at[0], y:at[1], w:W * sc, h:H * sc };
   /* Where the mouse is, in the panel's own coordinates (for the weights). */
   const lmx = onPanel ? (HOVER.mx - at[0]) / sc : -1e9, lmy = onPanel ? (HOVER.my - at[1]) / sc : -1e9;
@@ -236,6 +243,64 @@ function drawBrainoscope(){
   g2.restore();
 }
 
+/* ---------------------------------------------------------------- on the CCTV
+   Thomas, 2026-10-13: with brains on and somebody followed, the bottom-left
+   camera locks onto them, centred and in close, and the bottom-right quadrant
+   becomes the brain screen. The other two carry on chasing the excitement.
+   Let go and the bottom two are cameras again. */
+const SCOPE_CAM = 2, SCOPE_SCREEN = 3;
+function scopeCctvOn(){
+  const b = SCOPE.follow;
+  return SCOPE.on && VIEW === 'cctv' && b && BEINGS.indexOf(b) >= 0;
+}
+/* The camera's aim: the followed being, when there is one in sight. */
+if (typeof aimStop === 'function'){
+  const origAim = aimStop;
+  aimStop = function(cam, qs, loose){
+    if (cam.i === SCOPE_CAM && scopeCctvOn() && !beingAbsent(SCOPE.follow)){
+      cam.tzl = 1.6;                                  // in close
+      return [SCOPE.follow.x, SCOPE.follow.y];
+    }
+    return origAim(cam, qs, loose);
+  };
+}
+/* After the four quadrants are drawn: the halo in the following camera's
+   picture, and the brain screen over the quadrant beside it. */
+function drawScopeCctv(){
+  if (!scopeCctvOn()) return;
+  const b = SCOPE.follow, d = dpr(), top = 40;
+  const qs = quadSize(), w2 = qs[0], h2 = qs[1];
+  const cam = CCTV.cams[SCOPE_CAM];
+  if (cam && !beingAbsent(b)){
+    const vx = (SCOPE_CAM % 2) * w2, vy = top + (SCOPE_CAM >> 1) * h2;
+    const save = { K:K, panX:panX, panY:panY };
+    K = (w2 / 100) * Math.pow(2, cam.zl.p);
+    panX = vx + w2 / 2 - cv.width / (2 * d) - cam.pan.p * K;
+    panY = vy + h2 / 2 - cv.height / (2 * d) - cam.tilt.p * K;
+    g2.save();
+    g2.setTransform(d, 0, 0, d, 0, 0);
+    g2.beginPath(); g2.rect(vx, vy, w2, h2); g2.clip();
+    g2.translate(vx + w2 / 2, vy + h2 / 2); g2.rotate(cam.roll || 0); g2.translate(-(vx + w2 / 2), -(vy + h2 / 2));
+    scopeHalo(b);
+    g2.restore();
+    K = save.K; panX = save.panX; panY = save.panY;
+  }
+  /* The brain screen. */
+  const sx = (SCOPE_SCREEN % 2) * w2, sy = top + (SCOPE_SCREEN >> 1) * h2;
+  g2.save();
+  g2.setTransform(d, 0, 0, d, 0, 0);
+  g2.fillStyle = '#07080a'; g2.fillRect(sx, sy, w2, h2);
+  g2.beginPath(); g2.rect(sx, sy, w2, h2); g2.clip();
+  drawBrainoscope(function(W, H){
+    const scl = Math.min((w2 - 16) / W, (h2 - 36) / H, 2.2);
+    return [sx + (w2 - W * scl) / 2, sy + 26 + (h2 - 26 - H * scl) / 2, scl];
+  });
+  g2.font = '11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  g2.textBaseline = 'middle'; g2.fillStyle = 'rgba(143,195,216,0.85)';
+  g2.fillText('CAM ' + (SCOPE_SCREEN + 1) + '  BRAIN  \u00b7  ' + (b.name || b.kind) + '  \u00b7  following on CAM ' + (SCOPE_CAM + 1), sx + 10, sy + 13);
+  g2.restore();
+}
+
 /* The button, beside the overlays; B steps through a being's decisions. */
 (function(){
   if (typeof document === 'undefined' || self.LAB_WORKER) return;
@@ -255,7 +320,17 @@ function drawBrainoscope(){
   cv.addEventListener('click', function(e){
     if (!SCOPE.on || (typeof HAND !== 'undefined' && HAND.on)) return;
     const r = cv.getBoundingClientRect();
-    const who = castAt(e.clientX - r.left, e.clientY - r.top);
+    let mx = e.clientX - r.left, my = e.clientY - r.top, who;
+    if (VIEW === 'cctv'){
+      /* Through whichever camera was clicked - but the brain screen is a
+         screen, not a camera: clicks there change nothing. */
+      const qs = quadSize();
+      const qi = (mx >= qs[0] ? 1 : 0) + (my - 40 >= qs[1] ? 2 : 0);
+      if (scopeCctvOn() && qi === SCOPE_SCREEN) return;
+      const pv = pointerView(mx, my);
+      who = castAt(pv[0], pv[1]);
+      pointerDone();
+    } else who = castAt(mx, my);
     const next = who && who.kind && WIRING[who.kind] ? who : null;
     if (next !== SCOPE.follow) SCOPE.pick = 0;
     SCOPE.follow = next;
@@ -266,7 +341,7 @@ function drawBrainoscope(){
     const orig = frame;
     frame = function(t){
       orig(t);
-      try { drawBrainoscope(); }
+      try { drawBrainoscope(); drawScopeCctv(); }
       catch (e){ if (!SCOPE.warned){ SCOPE.warned = true; console.warn('brainoscope:', e); } }
     };
   }
