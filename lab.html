@@ -79,8 +79,26 @@ pre{white-space:pre-wrap;color:#e8927f;font-size:11px;background:#0f1317;border:
     and a difference is only <span class="hi">highlighted</span> once it is bigger than that.
     Integrity rows must be 0. &ldquo;Screen touched&rdquo; counts the sim reaching for the screen
     while it steps, which it must never do.</p>
+
+  <h4>train the granny brain</h4>
+  <p class="note" style="margin-top:0">Round 0 watches the hand-written grannies and copies them. Every round
+    after runs the brain on new days, alongside the hand-written granny on the very same days, and
+    learns from how the brain's days went. Uses the first seed and the length above.</p>
+  <div class="grid">
+    <label>rounds <input id="tRounds" type="number" value="12" min="1"></label>
+    <label>days a round <input id="tDays" type="number" min="2"></label>
+    <label>learning rate <input id="tLr" type="number" value="0.01" step="0.005"></label>
+  </div>
+  <div class="row">
+    <button id="tGo" class="go">train</button>
+    <button id="tStop" disabled>stop after this round</button>
+    <button id="tSave" disabled>download the brain</button>
+    <span id="tStatus" class="dim"></span>
+  </div>
+  <table id="tRes" style="margin-top:8px"></table>
 </main>
 
+<script src="js/net.js"></script>
 <script src="js/lab-run.js"></script>
 <script>
 'use strict';
@@ -314,6 +332,202 @@ function exportResults(){
   a.download = 'trueno-lab-' + out.at.slice(0, 16).replace(/[:T]/g, '-') + '.json';
   document.body.appendChild(a); a.click(); a.remove();
 }
+
+/* ================================================================ training
+   One day, as a promise: a worker where allowed, else a hidden frame. */
+function runOne(seed, ticks, code, scripts){
+  return new Promise(function(done){
+    let send, kill;
+    const onMsg = function(m){
+      if (!m) return;
+      if (m.type === 'ready'){
+        const msg = { type:'run', ticks:ticks, code:code, every:600 };
+        if (scripts){ msg.scripts = scripts; msg.runner = new URL('js/lab-run.js', location.href).href; }
+        send(msg);
+      } else if (m.type === 'done'){ kill(); done(m.result); }
+      else if (m.type === 'error'){ kill(); done({ error:m.error }); }
+    };
+    if (scripts){
+      const w = new Worker('js/lab-worker.js?seed=' + seed);
+      w.onmessage = function(e){ onMsg(e.data); };
+      w.onerror = function(e){ onMsg({ type:'error', error:e.message }); };
+      send = function(m){ w.postMessage(m); }; kill = function(){ w.terminate(); };
+    } else {
+      const f = document.createElement('iframe');
+      f.style.display = 'none';
+      f.src = 'trueno.html?seed=' + seed + '&lab=1&t=' + Date.now();
+      const lis = function(e){ if (e.source === f.contentWindow) onMsg(e.data); };
+      addEventListener('message', lis);
+      send = function(m){ f.contentWindow.postMessage(m, '*'); };
+      kill = function(){ removeEventListener('message', lis); f.remove(); };
+      document.body.appendChild(f);
+    }
+  });
+}
+function runAll(specs, par, scripts, tick){
+  return new Promise(function(done){
+    const out = new Array(specs.length);
+    let next = 0, live = 0, fin = 0;
+    const go = function(){
+      while (live < par && next < specs.length){
+        const i = next++, sp = specs[i];
+        live++;
+        runOne(sp.seed, sp.ticks, sp.code, scripts).then(function(r){
+          out[i] = r; live--; fin++;
+          if (tick) tick(fin, specs.length);
+          if (fin === specs.length) done(out); else go();
+        });
+      }
+    };
+    go();
+  });
+}
+
+let TRAIN = null;
+const HAND_CODE = 'BRAINS.granny.tap = [];';
+function netCode(hive){
+  return "BRAINS.granny.policy = 'net'; BRAINS.granny.kind = " + JSON.stringify(hive) +
+         "; BRAINS.granny.learnRate = 0; BRAINS.granny.dialRate = 0; BRAINS.granny.tap = [];";
+}
+function mean(a){ return a.length ? a.reduce(function(s, x){ return s + x; }, 0) / a.length : null; }
+
+/* Round 0: copy the hand-written granny from her own decisions. */
+function copyHand(samples){
+  const hive = netNew(GRANNY_SHAPE.nIn, GRANNY_SHAPE.nHid, GRANNY_SHAPE.nOut, 7);
+  const st = {};
+  for (let ep = 0; ep < 300; ep++){
+    const acc = netZero(hive);
+    for (const e of samples) netGrad(hive, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, 1 / samples.length, acc);
+    netAdam(hive, acc, st, 0.02);
+  }
+  let hit = 0;
+  for (const e of samples){
+    const c = netChances(netForward(hive, grannyInput(e.s, e.d)).z, GRANNY_SLOTS[e.d]);
+    let best = 0; for (let i = 1; i < c.p.length; i++) if (c.p[i] > c.p[best]) best = i;
+    if (best === e.a) hit++;
+  }
+  return { hive:hive, acc:samples.length ? hit / samples.length : null };
+}
+/* After a round: REINFORCE. Each choice in a day is pushed by how that
+   granny's day compared with the round's average, in standard deviations. */
+function learnFrom(hive, st, samples, lr){
+  if (!samples.length) return;
+  const sc = samples.map(function(e){ return e.score; });
+  const m = mean(sc);
+  const sd = Math.sqrt(mean(sc.map(function(x){ return (x - m) * (x - m); }))) || 1;
+  const chunks = 4, per = Math.ceil(samples.length / chunks);
+  for (let c = 0; c < chunks; c++){
+    const part = samples.slice(c * per, (c + 1) * per);
+    if (!part.length) continue;
+    const acc = netZero(hive);
+    for (const e of part){
+      const adv = (e.score - m) / sd;
+      netGrad(hive, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv / part.length, acc);
+    }
+    netAdam(hive, acc, st, lr);
+  }
+}
+
+async function train(){
+  const R = Math.max(1, +$('tRounds').value | 0);
+  const S = Math.max(2, +$('tDays').value | 0);
+  const seed0 = +$('seed0').value | 0;
+  const ticks = Math.round(+$('len').value / DT_);
+  const lr = +$('tLr').value || 0.01;
+  const scripts = canWork() ? await gameScripts().catch(function(){ return null; }) : null;
+  const par = scripts ? Math.max(1, +$('nWork').value | 0) : 1;
+  TRAIN = { rows:[], stop:false, hive:null, best:null, st:{} };
+  $('tGo').disabled = true; $('tStop').disabled = false; $('tSave').disabled = true;
+  const say = function(t){ $('tStatus').textContent = t; };
+  const t0 = performance.now();
+
+  /* --- round 0 */
+  say('round 0: watching the hand-written grannies...');
+  const seeds0 = []; for (let i = 0; i < S; i++) seeds0.push(seed0 + i);
+  const r0 = await runAll(seeds0.map(function(sd){ return { seed:sd, ticks:ticks, code:HAND_CODE }; }), par, scripts,
+                          function(f, n){ say('round 0: watching the hand-written grannies, ' + f + ' of ' + n); });
+  const samples0 = [];
+  for (const r of r0) if (r && r.tap) for (const e of r.tap) samples0.push(e);
+  const cp = copyHand(samples0);
+  TRAIN.hive = cp.hive;
+  TRAIN.rows.push({ round:0, note:'copied ' + samples0.length + ' decisions, ' + (100 * cp.acc).toFixed(0) + '% the same',
+                    hand:mean(r0.filter(function(r){ return r && r.metrics; }).map(function(r){ return r.metrics.grannyDay; }).filter(function(x){ return x !== null; })) });
+  drawTrain();
+
+  /* --- rounds 1.. */
+  for (let k = 1; k <= R && !TRAIN.stop; k++){
+    const seeds = []; for (let i = 0; i < S; i++) seeds.push(seed0 + k * S + i);
+    const specs = [];
+    for (const sd of seeds){
+      specs.push({ seed:sd, ticks:ticks, code:netCode(TRAIN.hive), arm:'net' });
+      specs.push({ seed:sd, ticks:ticks, code:HAND_CODE, arm:'hand' });
+    }
+    const res = await runAll(specs, par, scripts, function(f, n){ say('round ' + k + ' of ' + R + ': ' + f + ' of ' + n + ' days'); });
+    const errs = res.filter(function(r){ return !r || r.error; });
+    const net = [], hand = [], diffs = [], samples = [];
+    const pick = function(arm, key){
+      return res.map(function(r, i){ return specs[i].arm === arm && r && r.metrics ? r.metrics[key] : null; })
+                .filter(function(x){ return x !== null && x !== undefined; });
+    };
+    for (let i = 0; i < specs.length; i += 2){
+      const a = res[i], b = res[i + 1];
+      if (a && a.metrics && a.metrics.grannyDay !== null) net.push(a.metrics.grannyDay);
+      if (b && b.metrics && b.metrics.grannyDay !== null) hand.push(b.metrics.grannyDay);
+      if (a && a.metrics && b && b.metrics && a.metrics.grannyDay !== null && b.metrics.grannyDay !== null)
+        diffs.push(a.metrics.grannyDay - b.metrics.grannyDay);
+      if (a && a.tap) for (const e of a.tap) samples.push(e);
+    }
+    const d = stats(diffs);
+    const row = { round:k, net:mean(net), hand:mean(hand), diff:d ? d.m : null, se:d && d.se !== null ? 2 * d.se : null,
+                  chats:mean(pick('net', 'grannyChats')), chatsH:mean(pick('hand', 'grannyChats')),
+                  lost:mean(pick('net', 'grannyLost')), lostH:mean(pick('hand', 'grannyLost')),
+                  wet:mean(pick('net', 'grannyWet')), wetH:mean(pick('hand', 'grannyWet')),
+                  gaveUp:mean(pick('net', 'gaveUp')), shelter:mean(pick('net', 'sheltered')), shelterH:mean(pick('hand', 'sheltered')),
+                  n:samples.length, errs:errs.length };
+    TRAIN.rows.push(row);
+    /* The brain that played this round is the one judged: keep the best of them. */
+    if (row.diff !== null && (!TRAIN.best || row.diff > TRAIN.best.diff))
+      TRAIN.best = { diff:row.diff, round:k, hive:netCopy(TRAIN.hive) };
+    learnFrom(TRAIN.hive, TRAIN.st, samples, lr);
+    drawTrain();
+  }
+  say('done in ' + fmt((performance.now() - t0) / 1000) + (TRAIN.best ? ' - best was round ' + TRAIN.best.round : ''));
+  $('tGo').disabled = false; $('tStop').disabled = true; $('tSave').disabled = !TRAIN.hive;
+}
+function drawTrain(){
+  let h = '<tr><th>round</th><th>brain\'s day</th><th>hand-written</th><th>brain&minus;hand</th><th>&plusmn;</th>' +
+          '<th>chats</th><th>s lost</th><th>s wet</th><th>sheltered</th><th>gave up</th><th>choices</th></tr>';
+  const two = function(a, b){ return num(a) + ' <span class="dim">/ ' + num(b) + '</span>'; };
+  for (const r of TRAIN.rows){
+    if (r.round === 0){ h += '<tr><td>0</td><td class="dim" colspan="10" style="text-align:left">' + r.note +
+                            ' &middot; hand-written day ' + num(r.hand) + '</td></tr>'; continue; }
+    const sig = r.diff !== null && r.se !== null && Math.abs(r.diff) > r.se;
+    h += '<tr><td>' + r.round + (r.errs ? ' <span class="bad">' + r.errs + ' err</span>' : '') + '</td><td>' + num(r.net) +
+         '</td><td class="dim">' + num(r.hand) + '</td><td class="' + (sig ? (r.diff > 0 ? 'ok' : 'bad') : 'dim') + '">' +
+         (r.diff > 0 ? '+' : '') + num(r.diff) + '</td><td class="dim">' + num(r.se) + '</td><td>' + two(r.chats, r.chatsH) +
+         '</td><td>' + two(r.lost, r.lostH) + '</td><td>' + two(r.wet, r.wetH) + '</td><td>' + two(r.shelter, r.shelterH) +
+         '</td><td>' + num(r.gaveUp) + '</td><td class="dim">' + r.n + '</td></tr>';
+  }
+  $('tRes').innerHTML = h;
+}
+/* The brain, as a file the game loads: brains/granny.brain.js. The best round's,
+   if one beat the hand-written granny; else the latest. */
+function saveBrain(){
+  const pickB = TRAIN.best && TRAIN.best.diff > 0 ? TRAIN.best : { round:TRAIN.rows.length - 1, hive:TRAIN.hive };
+  const meta = { trained:new Date().toISOString(), round:pickB.round, rows:TRAIN.rows };
+  const txt = '/* The granny hive, trained in lab.html (' + meta.trained + ', round ' + meta.round + ').\n' +
+              '   22 neurons: 17 inputs -> 12 hidden -> 10 options. Loaded by trueno.html; a\n' +
+              '   town with no brain of its own starts from this one. */\n' +
+              'window.GRANNY_BRAIN = ' + JSON.stringify({ meta:meta, net:pickB.hive }) + ';\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([txt], { type:'text/javascript' }));
+  a.download = 'granny.brain.js';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+$('tDays').value = Math.max(2, Math.floor((+$('nWork').value || 2) / 2));
+$('tGo').onclick = train;
+$('tStop').onclick = function(){ if (TRAIN) TRAIN.stop = true; this.disabled = true; };
+$('tSave').onclick = saveBrain;
 
 $('go').onclick = start;
 $('stop').onclick = stop;

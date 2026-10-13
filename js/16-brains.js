@@ -39,7 +39,9 @@
 const BRAINS = {
   granny: {
     policy:'hand',
-    kind:{},                               // the shared brain - empty until one learns
+    kind:{},                               // the hive: a net.js network - empty until one is trained
+    learnRate:0.003, dialRate:0.05,        // learning as the game goes (net policy only); 0 = frozen
+    base:null,                             // her usual day, the yardstick a day is measured against
     days:{ n:0, sum:0, lost:0, chats:0, wet:0 },  // running tallies of scored days, for the lab
     made:{},                               // decision -> how often each option was taken
     replay:[]                              // [{ d, s, a, score, rid }], the newest REPLAY_MAX
@@ -49,9 +51,10 @@ const REPLAY_MAX = 400, DIARY_MAX = 40;
 SAVE_TOWN.push('BRAINS');                  // the learning is the town's, not the day's
 
 /* ---------------------------------------------------------------- senses */
-const GRANNY_SENSES = ['raining', 'daylight', 'time without her car', 'how far she has searched',
+const GRANNY_SENSES = ['rain where she is', 'daylight', 'time without her car', 'how far she has searched',
   'distance to the doors', 'distance to where she parked', 'nearest moving car',
-  'grannies nearby', 'a manager about', 'staff busy helping', 'just soaked', 'chats so far'];
+  'grannies nearby', 'a manager about', 'staff busy helping', 'just soaked', 'chats so far',
+  'umbrella up'];
 function lostSecs(b){
   return (b.lostSecs || 0) + (b.lostAt !== undefined && b.lostAt !== null ? simClock - b.lostAt : 0);
 }
@@ -68,7 +71,7 @@ function grannySenses(b){
     if (o !== b && o.kind === 'granny' && !beingAbsent(o) && Math.hypot(o.x - b.x, o.y - b.y) < 15) gr++;
   const one = function(x){ return Math.max(0, Math.min(1, x)); };
   return [
-    one(WX.rain),
+    one(rainHere(b.x, b.y)),
     daylight(),
     one(lostSecs(b) / 180),
     one((b.huntRing || 0) / 5),
@@ -79,7 +82,8 @@ function grannySenses(b){
     liveBeing('manager') ? 1 : 0,
     HELP.length ? 1 : 0,
     b.soakUntil !== undefined && simClock < b.soakUntil ? 1 : 0,
-    one((b.chats || 0) / 3)
+    one((b.chats || 0) / 3),
+    brollyUp(b) ? 1 : 0
   ];
 }
 
@@ -213,8 +217,64 @@ function grannyMisremember(b){
    resident's own (null for somebody who is not a resident). */
 const POLICIES = {
   hand: function(dp, b, s, kb, pb, ctx){ return dp.hand(b, ctx); },
-  random: function(dp){ return Math.floor(RND.brains() * dp.actions.length); }
+  random: function(dp){ return Math.floor(RND.brains() * dp.actions.length); },
+  /* The brain: the hive's chances for this decision's options, nudged by her
+     own dials, and one picked by those chances - not always the likeliest,
+     which is what keeps her from being a machine. */
+  net: function(dp, b, s, kb, pb, ctx, name){
+    const net = grannyHive(kb);
+    if (!net) return dp.hand(b, ctx);
+    const c = netChances(netForward(net, grannyInput(s, name)).z, GRANNY_SLOTS[name], pb && pb.dials);
+    let r = RND.brains();
+    for (let i = 0; i < c.p.length; i++){ r -= c.p[i]; if (r <= 0) return i; }
+    return c.p.length - 1;
+  }
 };
+
+/* ---------------------------------------------------------------- the granny brain
+   Thomas, 2026-10-13: the hive (every granny's) has 22 neurons - 17 inputs
+   (her 13 senses and which of the 4 decisions this is) into 12 hidden, out to
+   10, one per option across the four menus. Each granny has 10 personal dials,
+   one per option, added to the hive's answer: her own leanings. */
+/* GRANNY_DECS, GRANNY_SLOTS, GRANNY_SHAPE and grannyInput are in net.js,
+   so the lab wires her up exactly as the game does. */
+/* The hive: her town's own if it has one, else the one shipped with the game
+   (brains/granny.brain.js, trained in the lab). */
+function grannyHive(kb){
+  if (kb.kind && kb.kind.w1) return kb.kind;
+  if (window.GRANNY_BRAIN && window.GRANNY_BRAIN.net){ kb.kind = netCopy(window.GRANNY_BRAIN.net); return kb.kind; }
+  return null;
+}
+function grannyDials(pb){
+  if (!pb.dials) pb.dials = new Array(GRANNY_SHAPE.nOut).fill(0);
+  return pb.dials;
+}
+/* Learning as the game goes: after her day, each choice she made gets a
+   little likelier if the day beat her usual, a little less if it did not.
+   The hive learns slowly from everybody; her dials faster, from her alone. */
+function grannyLearn(kb, pb, diary, score){
+  if (kb.base === null || kb.base === undefined){ kb.base = score; return; }
+  const adv = Math.max(-1.5, Math.min(1.5, score - kb.base));
+  kb.base += 0.02 * (score - kb.base);
+  const net = grannyHive(kb);
+  if (!net || !diary.length || adv === 0) return;
+  if (kb.learnRate > 0){
+    const acc = netZero(net);
+    for (const e of diary) netGrad(net, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv, acc, pb && pb.dials);
+    netStep(net, acc, kb.learnRate / diary.length, 0.05);
+  }
+  if (pb && kb.dialRate > 0){
+    const dl = grannyDials(pb);
+    for (const e of diary){
+      const sl = GRANNY_SLOTS[e.d];
+      const c = netChances(netForward(net, grannyInput(e.s, e.d)).z, sl, dl);
+      for (let i = 0; i < sl.length; i++){
+        dl[sl[i]] += kb.dialRate * adv * ((i === e.a ? 1 : 0) - c.p[i]);
+        dl[sl[i]] = Math.max(-1.5, Math.min(1.5, dl[sl[i]]));       // a leaning, not a personality transplant
+      }
+    }
+  }
+}
 
 function decide(name, b, ctx){
   const dp = DECISIONS[name];
@@ -222,7 +282,7 @@ function decide(name, b, ctx){
   const s = dp.senses(b, ctx);
   const pol = POLICIES[kb.policy] || POLICIES.hand;
   const pb = b.res ? (b.res.brain || (b.res.brain = { n:0, mean:0, bias:{} })) : null;
-  let a = pol(dp, b, s, kb, pb, ctx);
+  let a = pol(dp, b, s, kb, pb, ctx, name);
   if (typeof a === 'string') a = dp.actions.indexOf(a);
   if (!(a >= 0 && a < dp.actions.length)) a = dp.actions.indexOf(dp.hand(b, ctx));
   if (!CENSUS.mute){
@@ -275,9 +335,12 @@ function scoreGrannyDay(b, how){
     pb.n++; pb.mean += (total - pb.mean) / pb.n;
   }
   for (const e of (b.diary || [])){
-    kb.replay.push({ d:e.d, s:e.s, a:e.a, score:total, rid:b.res ? b.res.rid : null });
+    const rec = { d:e.d, s:e.s, a:e.a, score:total, rid:b.res ? b.res.rid : null };
+    kb.replay.push(rec);
     if (kb.replay.length > REPLAY_MAX) kb.replay.shift();
+    if (kb.tap) kb.tap.push(rec);           // the lab, collecting a run's experience
   }
+  if (kb.policy === 'net') grannyLearn(kb, b.res ? b.res.brain : null, b.diary || [], total);
   b.diary = [];
   return total;
 }

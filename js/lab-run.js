@@ -137,6 +137,7 @@ function labRun(cfg, post){
       post({ type:'done', result:{
         metrics:r, ms:Math.round(performance.now() - t0), ticks:ticks,
         simSecs:ticks * DT, fp:labFingerprint(),
+        tap:BRAINS.granny.tap || null,
         screen:self.LAB_SCREEN ? self.LAB_SCREEN.touches : null,
         screenWhat:self.LAB_SCREEN ? self.LAB_SCREEN.what.slice(0, 8) : null } });
     } catch (e){
