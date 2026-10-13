@@ -38,6 +38,10 @@ const FOX_TRAITS = {
   vixen:  { name:'Senga', fearR:16, instinctR:6, drain:1.6, lightK:1.5 }    // shy
 };
 const FOX_NERVE_SECS = 150;          // a full nerve lasts this long on a dark, empty car park
+/* Not back until its nerve has properly recovered - instinct, not a choice
+   (2026-10-13: the first fox training learned to pop in and out all night,
+   nine short visits instead of five; Thomas wants them a treat). */
+const FOX_RETURN_NERVE = 0.67;
 const PEOPLE_KINDS = { granny:1, shopper:1, trolleyboy:1, manager:1, cleaner:1 };
 
 /* ---------------------------------------------------------------- their world
@@ -262,6 +266,7 @@ function foxStep(b, dt){
     return true;
   }
   if (!isNight()) return true;                         // asleep in the den till dusk
+  if (b.nerve < FOX_RETURN_NERVE) return true;         // not yet: still settling its nerves
   b.askT = (b.askT || 0) - dt;
   if (b.askT > 0) return true;
   b.askT = 20;
