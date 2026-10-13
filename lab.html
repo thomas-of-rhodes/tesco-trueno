@@ -91,6 +91,7 @@ pre{white-space:pre-wrap;color:#e8927f;font-size:11px;background:#0f1317;border:
   </div>
   <div class="row">
     <button id="tGo" class="go">train</button>
+    <button id="tResume" class="go" style="display:none">resume</button>
     <button id="tStop" disabled>stop after this round</button>
     <button id="tSave" disabled>download the brain</button>
     <span id="tStatus" class="dim"></span>
@@ -434,20 +435,44 @@ function learnFrom(hive, st, samples, lr){
   }
 }
 
-async function train(){
-  const R = Math.max(1, +$('tRounds').value | 0);
-  const S = Math.max(2, +$('tDays').value | 0);
-  const seed0 = +$('seed0').value | 0;
-  const ticks = Math.round(+$('len').value / DT_);
-  const lr = +$('tLr').value || 0.01;
+/* Training survives a refresh: everything is saved after each round, and the
+   page offers to carry on (Thomas refreshed the lab two rounds into a run). */
+const TRAIN_KEY = 'trueno-train';
+function trainSave(){
+  try { localStorage.setItem(TRAIN_KEY, JSON.stringify({ rows:TRAIN.rows, hive:TRAIN.hive, best:TRAIN.best,
+          st:TRAIN.st, cfg:TRAIN.cfg, next:TRAIN.next, done:!!TRAIN.done })); } catch (e){}
+}
+function trainLoad(){
+  try {
+    const t = JSON.parse(localStorage.getItem(TRAIN_KEY) || 'null');
+    if (!t || !t.cfg) return false;
+    TRAIN = { rows:t.rows || [], hive:t.hive, best:t.best, st:t.st || {}, cfg:t.cfg, next:t.next || 0,
+              done:t.done, stop:false };
+    return true;
+  } catch (e){ return false; }
+}
+addEventListener('beforeunload', function(e){
+  if (TRAIN && TRAIN.running){ e.preventDefault(); e.returnValue = ''; }
+});
+
+async function train(resume){
+  if (!(resume && trainLoad())){
+    TRAIN = { rows:[], stop:false, hive:null, best:null, st:{}, next:0,
+              cfg:{ R:Math.max(1, +$('tRounds').value | 0), S:Math.max(2, +$('tDays').value | 0),
+                    seed0:+$('seed0').value | 0, ticks:Math.round(+$('len').value / DT_),
+                    lr:+$('tLr').value || 0.01 } };
+  }
+  const R = TRAIN.cfg.R, S = TRAIN.cfg.S, seed0 = TRAIN.cfg.seed0, ticks = TRAIN.cfg.ticks, lr = TRAIN.cfg.lr;
   const scripts = canWork() ? await gameScripts().catch(function(){ return null; }) : null;
   const par = scripts ? Math.max(1, +$('nWork').value | 0) : 1;
-  TRAIN = { rows:[], stop:false, hive:null, best:null, st:{} };
+  TRAIN.stop = false; TRAIN.running = true; TRAIN.done = false;
+  $('tResume').style.display = 'none';
   $('tGo').disabled = true; $('tStop').disabled = false; $('tSave').disabled = true;
   const say = function(t){ $('tStatus').textContent = t; };
   const t0 = performance.now();
 
   /* --- round 0 */
+  if (TRAIN.next === 0){
   say('round 0: watching the hand-written grannies...');
   const seeds0 = []; for (let i = 0; i < S; i++) seeds0.push(seed0 + i);
   const r0 = await runAll(seeds0.map(function(sd){ return { seed:sd, ticks:ticks, code:HAND_CODE }; }), par, scripts,
@@ -458,10 +483,12 @@ async function train(){
   TRAIN.hive = cp.hive;
   TRAIN.rows.push({ round:0, note:'copied ' + samples0.length + ' decisions, ' + (100 * cp.acc).toFixed(0) + '% the same',
                     hand:mean(r0.filter(function(r){ return r && r.metrics; }).map(function(r){ return r.metrics.grannyDay; }).filter(function(x){ return x !== null; })) });
+  TRAIN.next = 1; trainSave();
+  }
   drawTrain();
 
   /* --- rounds 1.. */
-  for (let k = 1; k <= R && !TRAIN.stop; k++){
+  for (let k = TRAIN.next; k <= R && !TRAIN.stop; k++){
     const seeds = []; for (let i = 0; i < S; i++) seeds.push(seed0 + k * S + i);
     const specs = [];
     for (const sd of seeds){
@@ -496,8 +523,13 @@ async function train(){
     if (row.diff !== null && (!TRAIN.best || row.diff > TRAIN.best.diff))
       TRAIN.best = { diff:row.diff, round:k, hive:netCopy(TRAIN.hive) };
     learnFrom(TRAIN.hive, TRAIN.st, samples, lr);
+    TRAIN.next = k + 1; trainSave();
     drawTrain();
   }
+  TRAIN.running = false;
+  TRAIN.done = TRAIN.next > R;
+  trainSave();
+  if (!TRAIN.done) $('tResume').style.display = '';
   say('done in ' + fmt((performance.now() - t0) / 1000) + (TRAIN.best ? ' - best was round ' + TRAIN.best.round : ''));
   $('tGo').disabled = false; $('tStop').disabled = true; $('tSave').disabled = !TRAIN.hive;
 }
@@ -532,7 +564,17 @@ function saveBrain(){
   document.body.appendChild(a); a.click(); a.remove();
 }
 $('tDays').value = Math.max(2, Math.floor((+$('nWork').value || 2) / 2));
-$('tGo').onclick = train;
+$('tGo').onclick = function(){ train(false); };
+$('tResume').onclick = function(){ train(true); };
+/* A run from before a refresh: show where it got to, and offer to carry on. */
+if (trainLoad()){
+  drawTrain();
+  $('tSave').disabled = !TRAIN.hive;
+  if (!TRAIN.done){
+    $('tResume').style.display = '';
+    $('tStatus').textContent = 'a run stopped after round ' + (TRAIN.next - 1) + ' of ' + TRAIN.cfg.R + ' - resume carries on from there';
+  } else $('tStatus').textContent = 'last run finished (' + TRAIN.cfg.R + ' rounds)';
+}
 $('tStop').onclick = function(){ if (TRAIN) TRAIN.stop = true; this.disabled = true; };
 $('tSave').onclick = saveBrain;
 
