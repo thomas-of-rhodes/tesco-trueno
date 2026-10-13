@@ -156,7 +156,7 @@ function npcSolid(c, bite){
   c.box.off = true;                       // never detect itself
   for (const q of pts){
     const wx = c.x + q[0] * ch - q[1] * sh, wy = c.y + q[0] * sh + q[1] * ch;
-    const d = sdfAt(wx, wy);
+    const d = sdfAtCap(wx, wy, 0);        // only inside matters: exact below 0, 0 above
     if (d >= 0 || !isFinite(d)) continue;
     const e = 0.08;
     const gx = (sdfAt(wx + e, wy) - sdfAt(wx - e, wy)) / (2 * e);
@@ -313,7 +313,13 @@ function sdfSense(x, y){
   for (let i = 0; i < MOVERS.length; i++){
     const m = MOVERS[i];
     if (m.held || m.z > 0.35) continue;
-    const e = sdRect(x, y, m.box);
+    /* A trolley further off than the nearest thing so far, by more than its
+       own reach, cannot be the nearest: skip measuring it. Exact - the same
+       minimum (2026-10-13; every ray used to measure all 28 trolleys). */
+    const b = m.box, dx = x - b.x, dy = y - b.y;
+    const r = d + Math.sqrt(b.hl * b.hl + b.hw * b.hw) + 1e-6;
+    if (r > 0 && dx * dx + dy * dy > r * r) continue;
+    const e = sdRect(x, y, b);
     if (e < d) d = e;
   }
   return d;

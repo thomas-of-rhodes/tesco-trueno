@@ -85,7 +85,79 @@ function nearBoxes(w, x, y){
   if (i < 0 || j < 0 || i >= w.gw || j >= w.gh) return null;
   return w.grid[j * w.gw + i];
 }
-function sdfAt(x, y, noArena){
+/* ---------------------------------------------------------------- nearest first
+   2026-10-13. Late in the day, with twenty cars about, the sim crawled at 4x
+   real time, and nearly all of it was here: every query measured all ~50 boxes
+   on its cell's list, 229 million rectangle tests in two minutes of sim.
+
+   Each 10 m cell is split into 1.25 m squares, and each square keeps the
+   cell's SAME list sorted by the nearest any box could possibly be to anywhere
+   in that square: its distance from the square's centre, less the square's
+   half-diagonal, less FINE_SLACK - a true lower bound, because an exact
+   distance field never changes faster than you move. A query walks that
+   order and stops at the
+   first box that cannot beat what it already has - so it measures the same
+   boxes that could matter, gets the same minimum, to the last bit, and in an
+   open aisle measures a handful instead of fifty. Trueno sees exactly what he
+   saw; he just sees it sooner.
+
+   What moves a box in the index: parkInBay (re-sorts that box, fineMoved) and
+   the parked-car nudge (never more than 0.32 m since it was parked - hence the
+   slack). The lists live in a WeakMap beside the world, not in it, so they are
+   not saved; a loaded world builds its own (fineForget, 15-save.js).
+   SDF_CHECK = true measures every query both ways and counts disagreements. */
+const FCELL = 1.25, FSUB = 8, FSQ = 64;      // GCELL / FCELL, and squared
+const FHALF = FCELL * Math.SQRT1_2;           // a square's half-diagonal
+const FINE_SLACK = 0.33;                      // the nudge, and a hair
+const FINE = new WeakMap();
+let SDF_CHECK = false, SDF_MISMATCH = 0;
+/* sdRect without the `off` switch: where the box IS, lit or not. */
+function sdRectGeo(px, py, b){
+  const dx = px - b.x, dy = py - b.y;
+  const lx = dx * b.c - dy * b.s, ly = dx * b.s + dy * b.c;
+  const qx = Math.abs(lx) - b.hl, qy = Math.abs(ly) - b.hw;
+  const ox = Math.max(qx, 0), oy = Math.max(qy, 0);
+  return Math.sqrt(ox * ox + oy * oy) + Math.min(Math.max(qx, qy), 0);
+}
+function fineKey(w, k, fx, fy){
+  return sdRectGeo(fx, fy, w.boxes[k]) - FHALF - FINE_SLACK;
+}
+function fineSort(w, f, fid){
+  const c = Math.floor(fid / FSQ), sub = fid % FSQ;
+  const fx = ((c % w.gw) * FSUB + (sub % FSUB) + 0.5) * FCELL;
+  const fy = (Math.floor(c / w.gw) * FSUB + Math.floor(sub / FSUB) + 0.5) * FCELL;
+  const L = w.grid[c];
+  const pairs = L.map(function(k){ return [fineKey(w, k, fx, fy), k]; });
+  pairs.sort(function(a, b){ return a[0] - b[0] || a[1] - b[1]; });
+  f.idx[fid] = Int32Array.from(pairs, function(p){ return p[1]; });
+  f.key[fid] = Float64Array.from(pairs, function(p){ return p[0]; });
+}
+function fineIndex(w){
+  let f = FINE.get(w);
+  if (f) return f;
+  f = { idx:[], key:[], cellsOf:[] };
+  for (let c = 0; c < w.grid.length; c++){
+    const L = w.grid[c];
+    if (!L) continue;
+    for (let sub = 0; sub < FSQ; sub++){
+      const fid = c * FSQ + sub;
+      fineSort(w, f, fid);
+      for (const k of L) (f.cellsOf[k] = f.cellsOf[k] || []).push(fid);
+    }
+  }
+  FINE.set(w, f);
+  return f;
+}
+/* A box has been placed somewhere new: re-sort the squares that list it. */
+function fineMoved(w, k){
+  const f = FINE.get(w);
+  if (!f || !f.cellsOf[k]) return;
+  for (const fid of f.cellsOf[k]) fineSort(w, f, fid);
+}
+function fineForget(w){ if (w) FINE.delete(w); }
+
+/* The old way, kept as the reference the fast one must agree with. */
+function sdfAtSlow(x, y, noArena){
   const w = WORLD;
   let d = noArena ? GCELL : -sdRect(x, y, w.arena);
   const list = nearBoxes(w, x, y);
@@ -105,6 +177,69 @@ function sdfAt(x, y, noArena){
     const e = sdRect(x, y, w.boxes[w.always[i]]);
     if (e < d) d = e;
   }
+  return d;
+}
+function sdfAt(x, y, noArena){
+  const w = WORLD;
+  let d = noArena ? GCELL : -sdRect(x, y, w.arena);
+  const list = nearBoxes(w, x, y);
+  if (list === null){
+    for (let i = 0; i < w.boxes.length; i++){
+      const e = sdRect(x, y, w.boxes[i]);
+      if (e < d) d = e;
+    }
+    return d;
+  }
+  if (d > GCELL) d = GCELL;
+  const f = fineIndex(w);
+  const i = Math.floor(x / GCELL), j = Math.floor(y / GCELL);
+  const si = Math.min(FSUB - 1, Math.max(0, Math.floor(x / FCELL) - i * FSUB));
+  const sj = Math.min(FSUB - 1, Math.max(0, Math.floor(y / FCELL) - j * FSUB));
+  const fid = (j * w.gw + i) * FSQ + sj * FSUB + si;
+  const idx = f.idx[fid], key = f.key[fid];
+  for (let n = 0; n < idx.length; n++){
+    if (key[n] > d + 1e-6) break;               // nothing from here on can be nearer
+    const e = sdRect(x, y, w.boxes[idx[n]]);
+    if (e < d) d = e;
+  }
+  for (let n = 0; n < w.always.length; n++){
+    const e = sdRect(x, y, w.boxes[w.always[n]]);
+    if (e < d) d = e;
+  }
+  if (SDF_CHECK && sdfAtSlow(x, y, noArena) !== d) SDF_MISMATCH++;
+  return d;
+}
+/* For questions that only care how far INSIDE something a point is: the
+   answer is exact below `cap` and just `cap` above it - so the search can stop
+   at the first box that could not come under it. npcSolid asks this at six
+   corners of every car, every step, and only acts on a negative. */
+function sdfAtCap(x, y, cap){
+  const w = WORLD;
+  let d = Math.min(-sdRect(x, y, w.arena), cap);
+  const list = nearBoxes(w, x, y);
+  if (list === null){
+    for (let i = 0; i < w.boxes.length; i++){
+      const e = sdRect(x, y, w.boxes[i]);
+      if (e < d) d = e;
+    }
+    return d;
+  }
+  const f = fineIndex(w);
+  const i = Math.floor(x / GCELL), j = Math.floor(y / GCELL);
+  const si = Math.min(FSUB - 1, Math.max(0, Math.floor(x / FCELL) - i * FSUB));
+  const sj = Math.min(FSUB - 1, Math.max(0, Math.floor(y / FCELL) - j * FSUB));
+  const fid = (j * w.gw + i) * FSQ + sj * FSUB + si;
+  const idx = f.idx[fid], key = f.key[fid];
+  for (let n = 0; n < idx.length; n++){
+    if (key[n] > d + 1e-6) break;
+    const e = sdRect(x, y, w.boxes[idx[n]]);
+    if (e < d) d = e;
+  }
+  for (let n = 0; n < w.always.length; n++){
+    const e = sdRect(x, y, w.boxes[w.always[n]]);
+    if (e < d) d = e;
+  }
+  if (SDF_CHECK && Math.min(sdfAtSlow(x, y), cap) !== d) SDF_MISMATCH++;
   return d;
 }
 /* Which thing is nearest, so a contact can be classified §4.1 */
@@ -268,6 +403,7 @@ function parkInBay(bay, model, rnd, w, at, veh){
   b.hl = model.l / 2; b.hw = model.w / 2;
   b.a = a; b.c = Math.cos(-a); b.s = Math.sin(-a);
   b.off = false;
+  fineMoved(world, bay.box);          // and the nearest-first lists learn where it is
   bay.car = { model:model, skew:skew, off:off, shy:shy, veh:veh || newVeh(model) };
   bay.car.veh.bay = bay;
   return bay;

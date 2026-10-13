@@ -6,7 +6,7 @@
 const { Worker } = require('worker_threads');
 const path = require('path');
 const seed = +(process.argv[2] || 1000), from = +(process.argv[3] || 4) * 60 * 120, ticks = +(process.argv[4] || 120) * 120;
-const names = ['drive', 'senses', 'scanGaps', 'corridorProbe', 'clearestSteer', 'lateralRoom', 'rearSense', 'probe',
+const names = ['npcSolid', 'npcShunt', 'boxAt', 'sdfSense', 'stepNpcFall', 'drive', 'senses', 'scanGaps', 'corridorProbe', 'clearestSteer', 'lateralRoom', 'rearSense', 'probe',
   'stepCars', 'stepNpc', 'stepBeings', 'walkTo', 'stepMovers', 'routeTo', 'sdfAt', 'sdfNormal', 'nearestKind',
   'nearBoxes', 'sdRect', 'solid', 'collide', 'collidePeople', 'collideMovers', 'stepExcite', 'trafficStep', 'stepCensus'];
 const w = new Worker(path.join(__dirname, 'sim-thread.js'),

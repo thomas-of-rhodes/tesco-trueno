@@ -271,6 +271,8 @@ function saveRestore(snap, townOnly){
 }
 /* What the screen needs to agree with what was loaded. */
 function saveAfter(){
+  /* The world's boxes may all be somewhere new: nearest-first lists rebuild. */
+  if (typeof fineForget === 'function') fineForget(WORLD);
   const b = function(id, on){ const el = document.getElementById(id); if (el) el.classList.toggle('on', !!on); };
   b('bFast', fastDay); b('bAuto', auto);
   acc = 0; last = 0;

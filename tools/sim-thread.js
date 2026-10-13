@@ -101,5 +101,7 @@ if (D.speedEvery){
 }
 
 vm.runInThisContext('labRun')(D, function(m){
+  /* D.report: an expression read out at the end, for checks (e.g. SDF_MISMATCH). */
+  if (m.type === 'done' && D.report) m.result.report = vm.runInThisContext(D.report);
   if (m.type === 'done' || m.type === 'error') parentPort.postMessage(m);
 });
