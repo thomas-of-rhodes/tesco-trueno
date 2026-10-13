@@ -42,9 +42,9 @@ function scopeDock(W, H, sc){
   if (cen && cen.offsetParent !== null && getComputedStyle(cen).display !== 'none') below += cen.offsetHeight + 8;
   return [8, Math.max(40, vh - below - H * sc)];
 }
-function scopeHalo(b){
+function scopeHalo(b, faint){
   const q = P(b.x, b.y), sx = SX(q), sy = SY(q, b.z > 0.3 ? b.z : 0);
-  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+  const pulse = faint ? 0.15 : 0.5 + 0.5 * Math.sin(performance.now() / 260);
   const r = Math.max(9, 1.2 * K);
   g2.save();
   g2.lineWidth = 2;
@@ -62,12 +62,12 @@ function scopeWhere(b){
 }
 /* `place` (the CCTV's brain quadrant): a function (W, H) -> [x, y, scale]
    that puts the panel somewhere other than the dock, for the followed being. */
-function drawBrainoscope(place){
+function drawBrainoscope(place, forced){
   if (!SCOPE.on || typeof castAt !== 'function' || !DECISIONS) return;
   if (!place && VIEW === 'cctv') return;          // the CCTV draws its own (drawScopeCctv)
   /* Whoever is being followed - or, failing that, whoever is under the mouse. */
-  let b = SCOPE.follow;
-  if (b && BEINGS.indexOf(b) < 0){ b = SCOPE.follow = null; }      // gone for good
+  if (SCOPE.follow && BEINGS.indexOf(SCOPE.follow) < 0) SCOPE.follow = null;   // gone for good
+  let b = forced || SCOPE.follow;
   if (place && !b) return;
   if (b && beingAbsent(b)){
     const W0 = 380, H0 = 34;
@@ -249,15 +249,18 @@ function drawBrainoscope(place){
    becomes the brain screen. The other two carry on chasing the excitement.
    Let go and the bottom two are cameras again. */
 const SCOPE_CAM = 2, SCOPE_SCREEN = 3;
-function scopeCctvOn(){
+/* Brains on in the CCTV view: CAM 4 is the brain screen from that moment. */
+function scopeCctvOn(){ return SCOPE.on && VIEW === 'cctv'; }
+/* ...and CAM 3 follows once somebody has been clicked. */
+function scopeCctvFollowing(){
   const b = SCOPE.follow;
-  return SCOPE.on && VIEW === 'cctv' && b && BEINGS.indexOf(b) >= 0;
+  return scopeCctvOn() && b && BEINGS.indexOf(b) >= 0;
 }
 /* The camera's aim: the followed being, when there is one in sight. */
 if (typeof aimStop === 'function'){
   const origAim = aimStop;
   aimStop = function(cam, qs, loose){
-    if (cam.i === SCOPE_CAM && scopeCctvOn() && !beingAbsent(SCOPE.follow)){
+    if (cam.i === SCOPE_CAM && scopeCctvFollowing() && !beingAbsent(SCOPE.follow)){
       cam.tzl = 1.6;                                  // in close
       return [SCOPE.follow.x, SCOPE.follow.y];
     }
@@ -266,38 +269,74 @@ if (typeof aimStop === 'function'){
 }
 /* After the four quadrants are drawn: the halo in the following camera's
    picture, and the brain screen over the quadrant beside it. */
+/* A halo on `b` as camera `ci` sees it. */
+function scopeHaloInCam(b, ci, faint){
+  const cam = CCTV.cams[ci];
+  if (!cam || beingAbsent(b)) return;
+  const d = dpr(), top = 40, qs = quadSize(), w2 = qs[0], h2 = qs[1];
+  const vx = (ci % 2) * w2, vy = top + (ci >> 1) * h2;
+  const save = { K:K, panX:panX, panY:panY };
+  K = (w2 / 100) * Math.pow(2, cam.zl.p);
+  panX = vx + w2 / 2 - cv.width / (2 * d) - cam.pan.p * K;
+  panY = vy + h2 / 2 - cv.height / (2 * d) - cam.tilt.p * K;
+  g2.save();
+  g2.setTransform(d, 0, 0, d, 0, 0);
+  g2.beginPath(); g2.rect(vx, vy, w2, h2); g2.clip();
+  g2.translate(vx + w2 / 2, vy + h2 / 2); g2.rotate(cam.roll || 0); g2.translate(-(vx + w2 / 2), -(vy + h2 / 2));
+  scopeHalo(b, faint);
+  g2.restore();
+  K = save.K; panX = save.panX; panY = save.panY;
+}
+/* Who is under the pointer, through whichever camera it is over (not the
+   brain screen). Returns { b, ci } or null. */
+function scopeCctvHover(){
+  if (HOVER.mx < 0) return null;
+  const qs = quadSize();
+  const qi = (HOVER.mx >= qs[0] ? 1 : 0) + (HOVER.my - 40 >= qs[1] ? 2 : 0);
+  if (qi === SCOPE_SCREEN || HOVER.my < 40) return null;
+  const pv = pointerView(HOVER.mx, HOVER.my);
+  const who = castAt(pv[0], pv[1]);
+  pointerDone();
+  return who && who.kind && WIRING[who.kind] ? { b:who, ci:pv[2] >= 0 ? pv[2] : qi } : null;
+}
 function drawScopeCctv(){
   if (!scopeCctvOn()) return;
-  const b = SCOPE.follow, d = dpr(), top = 40;
+  const d = dpr(), top = 40;
   const qs = quadSize(), w2 = qs[0], h2 = qs[1];
-  const cam = CCTV.cams[SCOPE_CAM];
-  if (cam && !beingAbsent(b)){
-    const vx = (SCOPE_CAM % 2) * w2, vy = top + (SCOPE_CAM >> 1) * h2;
-    const save = { K:K, panX:panX, panY:panY };
-    K = (w2 / 100) * Math.pow(2, cam.zl.p);
-    panX = vx + w2 / 2 - cv.width / (2 * d) - cam.pan.p * K;
-    panY = vy + h2 / 2 - cv.height / (2 * d) - cam.tilt.p * K;
-    g2.save();
-    g2.setTransform(d, 0, 0, d, 0, 0);
-    g2.beginPath(); g2.rect(vx, vy, w2, h2); g2.clip();
-    g2.translate(vx + w2 / 2, vy + h2 / 2); g2.rotate(cam.roll || 0); g2.translate(-(vx + w2 / 2), -(vy + h2 / 2));
-    scopeHalo(b);
-    g2.restore();
-    K = save.K; panX = save.panX; panY = save.panY;
-  }
+  const hov = scopeCctvHover();
+  if (hov && hov.b !== SCOPE.follow) scopeHaloInCam(hov.b, hov.ci, true);
+  if (scopeCctvFollowing()) scopeHaloInCam(SCOPE.follow, SCOPE_CAM, false);
+  const b = scopeCctvFollowing() ? SCOPE.follow : (hov ? hov.b : null);
   /* The brain screen. */
   const sx = (SCOPE_SCREEN % 2) * w2, sy = top + (SCOPE_SCREEN >> 1) * h2;
   g2.save();
   g2.setTransform(d, 0, 0, d, 0, 0);
   g2.fillStyle = '#07080a'; g2.fillRect(sx, sy, w2, h2);
   g2.beginPath(); g2.rect(sx, sy, w2, h2); g2.clip();
-  drawBrainoscope(function(W, H){
-    const scl = Math.min((w2 - 16) / W, (h2 - 36) / H, 2.2);
-    return [sx + (w2 - W * scl) / 2, sy + 26 + (h2 - 26 - H * scl) / 2, scl];
-  });
   g2.font = '11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-  g2.textBaseline = 'middle'; g2.fillStyle = 'rgba(143,195,216,0.85)';
-  g2.fillText('CAM ' + (SCOPE_SCREEN + 1) + '  BRAIN  \u00b7  ' + (b.name || b.kind) + '  \u00b7  following on CAM ' + (SCOPE_CAM + 1), sx + 10, sy + 13);
+  g2.textBaseline = 'middle';
+  if (b){
+    drawBrainoscope(function(W, H){
+      const scl = Math.min((w2 - 16) / W, (h2 - 36) / H, 2.2);
+      return [sx + (w2 - W * scl) / 2, sy + 26 + (h2 - 26 - H * scl) / 2, scl];
+    }, b);
+    g2.font = '11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    g2.textBaseline = 'middle'; g2.fillStyle = 'rgba(143,195,216,0.85)';
+    g2.fillText('CAM ' + (SCOPE_SCREEN + 1) + '  BRAIN  \u00b7  ' + (b.name || b.kind) + '  \u00b7  ' +
+                (b === SCOPE.follow ? 'following on CAM ' + (SCOPE_CAM + 1) : 'click to follow'), sx + 10, sy + 13);
+  } else {
+    /* Nobody yet: say how. */
+    g2.fillStyle = 'rgba(143,195,216,0.85)';
+    g2.fillText('CAM ' + (SCOPE_SCREEN + 1) + '  BRAIN', sx + 10, sy + 13);
+    g2.textAlign = 'center';
+    g2.fillStyle = '#cfd6db';
+    g2.fillText('point at a granny,', sx + w2 / 2, sy + h2 / 2 - 22);
+    g2.fillText('a gull or a fox', sx + w2 / 2, sy + h2 / 2 - 8);
+    g2.fillStyle = '#7e8890';
+    g2.fillText('click to follow it', sx + w2 / 2, sy + h2 / 2 + 10);
+    g2.fillText('on CAM ' + (SCOPE_CAM + 1), sx + w2 / 2, sy + h2 / 2 + 24);
+    g2.textAlign = 'left';
+  }
   g2.restore();
 }
 
