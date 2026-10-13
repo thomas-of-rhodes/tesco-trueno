@@ -589,6 +589,24 @@ function runTests(){
     add('census: nobody popped in or out', inv + ' invented, ' + van + ' vanished since load',
         '0 and 0', inv === 0 && van === 0);
   }
+  /* Save and load (step 4), on the live day: save it, run it on twenty
+     seconds, put the save back, run the same twenty seconds again - the two
+     must agree to the last digit. A global that changes as the sim runs but
+     is missing from SAVE_MOMENT shows up here. Then the save goes back once
+     more, so the page carries on from where it was. */
+  if (typeof saveSnapshot === 'function' && !HAND.grabbed){
+    const fpOf = function(){
+      return JSON.stringify(saveEncode(SAVE_TOWN.concat(SAVE_MOMENT))) + JSON.stringify(saveRng());
+    };
+    const snap0 = JSON.parse(JSON.stringify(saveSnapshot()));
+    const run = function(){ for (let i = 0; i < 2400; i++) simStep(); return fpOf(); };
+    const a = run();
+    saveRestore(snap0);
+    const b = run();
+    saveRestore(snap0);
+    add('save and load: the day carries on the same', a === b ? 'identical after 20 s' : 'drifted',
+        'identical', a === b);
+  }
 
   let html = '';
   let passed = 0;

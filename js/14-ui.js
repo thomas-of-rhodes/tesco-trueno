@@ -417,6 +417,7 @@ function frame(t){
   stepHand(dtr);
   /* Fixed steps, however the frames fall. */
   while (acc >= DT){ simStep(); acc -= DT; }
+  saveTick(dtr);
   /* Four times a second is plenty for the peaks - they are a reading of a field
      with a six second half-life, so recomputing them every frame would just be
      the same answer a hundred and twenty times. */
@@ -628,16 +629,20 @@ addEventListener('mouseup', function(){
 });
 addEventListener('resize', resize);
 
-showOverlays(false);          // a clean car park to begin with
-WORLD = buildSite();
-seedTrolleys();
-seedCast();
-buildLattice();
-settleLamps();                 // whatever hour it opens at, the lamps are right
-resize();
+/* Building the day. Called by 15-save.js once it knows whether there is a
+   saved town to pour in first. */
+function bootDay(){
+  showOverlays(false);          // a clean car park to begin with
+  WORLD = buildSite();
+  seedTrolleys();
+  seedCast();
+  buildLattice();
+  settleLamps();                 // whatever hour it opens at, the lamps are right
+  resize();
+}
 /* The suite is no longer something to run on every page load. It has grown to
    25 starts x 45 s twice over for the manoeuvre comparison alone, plus the
    attractor, flick and weather runs - about forty seconds of simulation before
    the car park would so much as appear. It is a development harness, so it
-   lives behind its button now and the sim starts immediately. */
-requestAnimationFrame(frame);
+   lives behind its button now and the sim starts immediately. The first
+   frame is requested by 15-save.js, after any save has loaded. */
