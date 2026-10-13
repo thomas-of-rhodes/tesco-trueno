@@ -100,7 +100,8 @@ const KIND_READS = {
   granny:[['chats', 'grannyChats'], ['company', 'grannyCompany'], ['wet s', 'grannyWet'], ['sheltered', 'sheltered'],
           ['linger', 'lingered'], ['wander', 'wandered'], ['fed gulls', 'fedGulls'], ['mobbed', 'mobbed']],
   gull:  [['food/min', 'gullFood'], ['in company', 'gullFlock'], ['frights/hr', 'gullFright'],
-          ['held nerve', 'gullHeld'], ['crumbs', 'gullCrumbs'], ['fed by grannies', 'fedGulls'], ['mobbing', 'mobbed']]
+          ['held nerve', 'gullHeld'], ['too heavy', 'gullHeavy'], ['gave up', 'gullLeft'], ['crumbs', 'gullCrumbs'],
+          ['mobbing', 'mobbed']]
 };
 function roundRow(k, specs, res, kind){
   kind = kind || 'granny';

@@ -386,9 +386,15 @@ const BEHAVE = {
      and takes off the moment a car means it. */
   gull: function(b, dt){
     gullFeel(b, dt);                       // how it feels, and its choices settled (16-brains.js)
+    if (b.leavingTo){ gullLeave(b, dt); return; }      // off to the tip, or the Tay
     const threat = carThreat(b);
     if (b.nerveT > 0) b.nerveT -= dt;
-    if (threat > 0.25 && b.z < 0.2 && !(b.nerveT > 0)){
+    /* Too heavy to take off: it waddles out of the way instead, as best it can. */
+    if (threat > 0.25 && b.z < 0.2 && gullGrounded(b)){
+      const away = Math.atan2(b.y - car.y, b.x - car.x);
+      b.tx = b.x + Math.cos(away) * 5; b.ty = b.y + Math.sin(away) * 5;
+      b.planUntil = simClock + 2;
+    } else if (threat > 0.25 && b.z < 0.2 && !(b.nerveT > 0)){
       /* Fly, or hold its nerve a moment longer (16-brains.js). A car this close
          is instinct, not a choice: no gull learns to be run over. */
       const act = threat > 0.75 ? 'fly' : decide('gullThreat', b, { threat:threat });
@@ -499,7 +505,7 @@ const BEHAVE = {
       if (bi >= 0 && RUB[bi]){ b.tx = RUB[bi][0]; b.ty = RUB[bi][1]; b.rubI = bi; }
       else if (RND.beings() < 0.3) wanderTarget(b, 6);
     }
-    const there = walkTo(b, dt, b.k.speed * (0.5 + 0.5 * Math.sin(b.anim * 3) ** 2));
+    const there = walkTo(b, dt, b.k.speed * (0.5 + 0.5 * Math.sin(b.anim * 3) ** 2) * gullPace(b));
     if (there){
       b.state = poseOr(b, b.fed > 6 ? 'overfed' : 'alert');
       /* A crumb - if there are any left by the time it gets there. */
@@ -799,6 +805,7 @@ function stepHelp(dt){
 }
 
 function stepBeings(dt){
+  gullTopUp(dt);                          // a gull short? one flies in (16-brains.js)
   const was = TOD;
   /* Only the CLOCK speeds up, never the physics - the point is to reach dusk
      sooner, not to watch a car park on fast forward. */

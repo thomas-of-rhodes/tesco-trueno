@@ -40,7 +40,8 @@ function labMetrics(){
     fedGulls:ev.fedGulls || 0, mobbed:ev.mobbed || 0,
     glMins:brainOf('gull').life.mins, glFeel:brainOf('gull').life.feel, glFood:brainOf('gull').life.food,
     glFlock:brainOf('gull').life.flock, glFright:brainOf('gull').life.frights, gullHeld:brainOf('gull').life.held,
-    gullCrumbs:brainOf('gull').life.crumbs
+    gullCrumbs:brainOf('gull').life.crumbs, glHeavy:brainOf('gull').life.heavy,
+    gullLeft:brainOf('gull').life.left, gullArrived:brainOf('gull').life.arrived
   };
 }
 /* The rows lab.html shows, in order: [key, label, group, better]. `better` is
@@ -74,6 +75,9 @@ const LAB_ROWS = [
   ['gullFright',   'frights, a gull-hour',          'gulls',     'down'],
   ['gullHeld',     'held its nerve',                'gulls',     ''],
   ['gullCrumbs',   'crumbs eaten',                  'gulls',     ''],
+  ['gullHeavy',    'share of time too heavy to fly', 'gulls',     'down'],
+  ['gullLeft',     'gave up - tip or Tay',          'gulls',     'down'],
+  ['gullArrived',  'new gulls flew in',             'gulls',     ''],
   ['bumps',        'Trueno: bumps',                 'trueno',    'down'],
   ['sulks',        'Trueno: sulks',                 'trueno',    'down'],
   ['truenoTay',    'Trueno: into the Tay',          'trueno',    'down'],
@@ -152,6 +156,7 @@ function labRun(cfg, post){
       r.gullFood = r.glMins > 0 ? r.glFood / r.glMins : null;
       r.gullFlock = r.glMins > 0 ? r.glFlock / r.glMins : null;
       r.gullFright = r.glMins > 0 ? 60 * r.glFright / r.glMins : null;
+      r.gullHeavy = r.glMins > 0 ? r.glHeavy / r.glMins : null;
       r.jammed = samples ? jammed / samples : null;
       const c = census();
       const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;

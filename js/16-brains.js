@@ -58,7 +58,8 @@ const BRAINS = {
 const BRAIN_NEW = {
   gull:function(){ return { policy:'hand', kind:{}, learnRate:0, dialRate:0.05, base:null, v:0,
                             made:{}, replay:[],
-                            life:{ mins:0, feel:0, food:0, flock:0, frights:0, held:0, crumbs:0 } }; }
+                            life:{ mins:0, feel:0, food:0, flock:0, frights:0, held:0, crumbs:0,
+                                   heavy:0, left:0, arrived:0 } }; }
 };
 function brainOf(kind){
   return BRAINS[kind] || (BRAINS[kind] = BRAIN_NEW[kind]());
@@ -412,13 +413,31 @@ function somebodyNear(b, r){
    and crumbs are a real handful now (a granny scatters 6-12), so a gull in a
    crowd round a granny is happier but gets less lunch. No snatching (Thomas). */
 const GULL_FEEL = {
-  food:0.25,            // each peck of rubber or crumb
+  food:0.25,            // each peck of rubber or crumb - less the fuller it is,
+  stuffed:0.2,          //   by this much per unit of `full`...
+  foodFloor:-0.1,       //   ...down to a peck it did not want at all
+  heavyPerMin:-0.2,     // too heavy to fly: uncomfortable, and stuck
+  weakPerMin:-0.3,      // four minutes and more without food
+  gaveUp:-2.0,          // gone - to the tip, or fishing in the Tay
   companyPerMin:0.3,    // a gull or a person within a few metres
   foxPerMin:-0.4,       // a fox about
   fright:-0.3,          // a car going by too close
   flyPerMin:-0.1        // flying is work
 };
 const GULL_SECS = 20;   // a gull's choice is judged by the next twenty seconds
+/* Thomas, 2026-10-13: over-eating slows a gull down and in the end grounds it;
+   going hungry weakens it and in the end it gives up on the car park - off to
+   the tip, or fishing in the Tay. A new gull flies in from the river now and
+   then, so there are always about GULL_POP of them by day. */
+const GULL_FAT = { perPeck:0.03, burnPerMin:0.04, grounded:1.0 };
+const GULL_HUNGER = { weak:240, gives:480 };      // seconds without food
+const GULL_POP = 14;                              // as seedCast puts them down
+function gullPace(b){
+  let k = 1 - 0.35 * Math.min(1, b.fat || 0);
+  if ((b.hungerT || 0) > GULL_HUNGER.weak) k *= 0.7;
+  return k;
+}
+function gullGrounded(b){ return (b.fat || 0) >= GULL_FAT.grounded; }
 const COMPANY_KINDS = { gull:1, granny:1, shopper:1, trolleyboy:1, manager:1 };
 function gullFelt(b, part, v){
   b.feel = (b.feel || 0) + v;
@@ -478,11 +497,14 @@ function gullSenses(b){
     1 - one(b.full || 0),
     b.z > 0.2 ? 1 : 0,
     daylight(),
-    one(WX.rain)
+    one(WX.rain),
+    one(b.fat || 0),
+    one((b.hungerT || 0) / GULL_HUNGER.gives)
   ];
 }
 const GULL_SENSES = ['rubber in sight', 'crumbs going', 'gulls nearby', 'people nearby', 'in company now',
-  'nearest company', 'a fox about', 'a car coming', 'hungry', 'in the air', 'daylight', 'rain'];
+  'nearest company', 'a fox about', 'a car coming', 'hungry', 'in the air', 'daylight', 'rain',
+  'how heavy', 'time since food'];
 /* Every step, from the gull's own behaviour (12-beings.js): how it feels, and
    choices whose twenty seconds are up are settled - learned from at once,
    since a gull has no end to its day the way a granny's visit does. */
@@ -491,11 +513,27 @@ function gullFeel(b, dt){
   const F = GULL_FEEL, m = dt / 60, L = brainOf('gull').life, live = !CENSUS.mute;
   if (live) L.mins += m;
   b.full = (b.full || 0) * Math.exp(-dt / 60);
+  b.fat = Math.max(0, (b.fat || 0) - GULL_FAT.burnPerMin * m);
+  b.hungerT = (b.hungerT || 0) + dt;
   const fed = b.fed || 0;
   if (fed > (b.fedFelt || 0)){
     const n = fed - (b.fedFelt || 0);
-    gullFelt(b, 'food', F.food * n); b.full += 0.25 * n; b.fedFelt = fed;
+    for (let i = 0; i < n; i++){
+      gullFelt(b, 'food', Math.max(F.foodFloor, F.food - F.stuffed * b.full));
+      b.full += 0.25; b.fat += GULL_FAT.perPeck;
+    }
+    b.fedFelt = fed; b.hungerT = 0;
     if (live) L.food += n;
+  }
+  if (gullGrounded(b)){ gullFelt(b, 'heavy', F.heavyPerMin * m); if (live) L.heavy += m; }
+  if (b.hungerT > GULL_HUNGER.weak) gullFelt(b, 'weak', F.weakPerMin * m);
+  /* Eight minutes and nothing: it gives up on the place. */
+  if (b.hungerT > GULL_HUNGER.gives && !b.leavingTo){
+    b.leavingTo = RND.beings() < 0.5 ? 'tip' : 'tay';
+    gullFelt(b, 'gaveUp', F.gaveUp);
+    if (live) L.left++;
+    gullSettle(b, true);
+    return;
   }
   if (b.z <= 0.6 && gullCompanyNear(b, 4)){ gullFelt(b, 'company', F.companyPerMin * m); if (live) L.flock += m; }
   if (b.z > 0.2) gullFelt(b, 'flying', F.flyPerMin * m);
@@ -508,10 +546,14 @@ function gullFeel(b, dt){
   }
   for (const o of BEINGS)
     if (o.kind === 'fox' && !beingAbsent(o) && Math.hypot(o.x - b.x, o.y - b.y) < 6){ gullFelt(b, 'fox', F.foxPerMin * m); break; }
-  /* Settle the choices whose twenty seconds are up. */
+  gullSettle(b, false);
+}
+/* Settle the choices whose twenty seconds are up - or all of them, when the
+   gull is leaving and there will be no more to come. */
+function gullSettle(b, all){
   if (b.diary && b.diary.length){
     const kb = brainOf('gull'), done = [];
-    while (b.diary.length && simClock - b.diary[0].t >= GULL_SECS){
+    while (b.diary.length && (all || simClock - b.diary[0].t >= GULL_SECS)){
       const e = b.diary.shift();
       if (e.f0 === undefined) continue;
       e.credit = +((b.feel || 0) - e.f0).toFixed(4);
@@ -524,6 +566,33 @@ function gullFeel(b, dt){
     if (done.length && kb.policy === 'net') brainLearn(kb, b.brain || null, done, 'gull');
   }
 }
+/* Off it goes: up, and away - north over the Tay to fish, or west to the
+   tip - and gone once it is well off the site. */
+function gullLeave(b, dt){
+  const to = b.leavingTo === 'tay' ? [b.x, -70] : [X0 - 120, b.y];
+  const a = Math.atan2(to[1] - b.y, to[0] - b.x);
+  b.h = a; b.z = Math.min(6, (b.z || 0) + dt * 2.5);
+  b.x += Math.cos(a) * 7.4 * dt; b.y += Math.sin(a) * 7.4 * dt;
+  b.state = poseOr(b, 'wings-out'); b.moving = true;
+  b.leaveT = (b.leaveT || 0) + dt;
+  if (b.y < -45 || b.x < X0 - 60 || b.leaveT > 30) b.gone = true;
+}
+/* By day, a gull short of GULL_POP is made up now and then: one flies in
+   from the river and drops onto the car park. */
+function gullTopUp(dt){
+  if (daylight() < 0.5) return;
+  let n = 0;
+  for (const o of BEINGS) if (o.kind === 'gull' && !o.gone && !o.leavingTo) n++;
+  if (n >= GULL_POP) return;
+  BRAINS_GULL_T = (BRAINS_GULL_T || 0) - dt;
+  if (BRAINS_GULL_T > 0) return;
+  BRAINS_GULL_T = 60 + RND.beings() * 90;
+  const g = addBeing('gull', X0 + 20 + RND.beings() * (X1 - X0 - 40), Y0 - 10);
+  g.z = 5; g.hold = 3; g.tx = g.x + (RND.beings() - 0.5) * 20; g.ty = Y0 + 20 + RND.beings() * 40;
+  if (!CENSUS.mute) brainOf('gull').life.arrived++;
+}
+let BRAINS_GULL_T = 0;
+SAVE_MOMENT.push('BRAINS_GULL_T');         // part of the moment: a reloaded day must not drift
 
 /* Where she thinks she parked: where she DID park last time she came, or -
    if this is the first time we have seen her drive - her usual sort of spot,

@@ -130,6 +130,9 @@ function thoughtOf(b){
     return pickLine(b, ['it\'s not anywhere. it\'s not ANYWHERE.',
                         'cars do not just vanish']);
   if (b.kind === 'gull'){
+    if (b.leavingTo) return b.leavingTo === 'tay' ? 'fishing it is' : 'right. the tip.';
+    if ((b.fat || 0) >= 1) return pickLine(b, ['can\'t... quite... take off', 'i live here now']);
+    if ((b.hungerT || 0) > 240) return pickLine(b, ['starving. STARVING.', 'not a crumb']);
     if ((b.gz || 0) > 0.3) return pickLine(b, ['good view from up here',
                                                'this\'ll do', 'mine now']);
     if (b.z > 0.3) return 'RUN';
