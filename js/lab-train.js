@@ -85,6 +85,10 @@ function roundRow(k, specs, res){
                 lost:mean(pick('net', 'grannyLost')), lostH:mean(pick('hand', 'grannyLost')),
                 wet:mean(pick('net', 'grannyWet')), wetH:mean(pick('hand', 'grannyWet')),
                 gaveUp:mean(pick('net', 'gaveUp')), shelter:mean(pick('net', 'sheltered')), shelterH:mean(pick('hand', 'sheltered')),
+                linger:mean(pick('net', 'lingered')), lingerH:mean(pick('hand', 'lingered')),
+                wander:mean(pick('net', 'wandered')), wanderH:mean(pick('hand', 'wandered')),
+                backIn:mean(pick('net', 'backIn')), gulls:mean(pick('net', 'fedGulls')), gullsH:mean(pick('hand', 'fedGulls')),
+                mobbed:mean(pick('net', 'mobbed')), mobbedH:mean(pick('hand', 'mobbed')),
                 n:samples.length, errs:errs.length, err:errs.length ? String((errs[0] || {}).error || 'no result').slice(0, 300) : null };
   return { row:row, samples:samples };
 }

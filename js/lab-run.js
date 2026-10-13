@@ -35,7 +35,9 @@ function labMetrics(){
     gdN:BRAINS.granny.days.n, gdSum:BRAINS.granny.days.sum, gdLost:BRAINS.granny.days.lost,
     gdChats:BRAINS.granny.days.chats, gdWet:BRAINS.granny.days.wet || 0, gaveUp:ev.gaveUp || 0,
     gdCompany:BRAINS.granny.days.company || 0,
-    misremembered:ev.misremembered || 0, sheltered:ev.sheltered || 0, forgot:ev.forgot || 0
+    misremembered:ev.misremembered || 0, sheltered:ev.sheltered || 0, forgot:ev.forgot || 0,
+    lingered:ev.lingered || 0, wandered:ev.wandered || 0, backIn:ev.backIn || 0,
+    fedGulls:ev.fedGulls || 0, mobbed:ev.mobbed || 0
   };
 }
 /* The rows lab.html shows, in order: [key, label, group, better]. `better` is
@@ -55,6 +57,11 @@ const LAB_ROWS = [
   ['grannyWet',    'seconds out in the rain, each', 'grannies',  'down'],
   ['misremembered','went to last time\'s space',    'grannies',  ''],
   ['sheltered',    'waited out a shower',           'grannies',  ''],
+  ['lingered',     'another wee minute',            'grannies',  ''],
+  ['wandered',     'a wee wander after the shop',   'grannies',  ''],
+  ['backIn',       'back in for the milk',          'grannies',  ''],
+  ['fedGulls',     'fed the gulls',                 'grannies',  ''],
+  ['mobbed',       'mobbed by gulls',               'grannies',  'down'],
   ['gaveUp',       'gave up on her car',            'grannies',  'down'],
   ['forgot',       'forgot she drove (bus home)',   'grannies',  ''],
   ['gdN',          'grannies scored',               'grannies',  ''],

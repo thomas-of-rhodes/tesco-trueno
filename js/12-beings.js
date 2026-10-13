@@ -457,7 +457,14 @@ const BEHAVE = {
     }
     /* Rubber is food. Finding it is why RUB has always been kept in world
        coordinates rather than painted straight onto the canvas. */
-    if (b.hold <= 0 && RUB.length && (b.t % 1) < dt){
+    /* A granny scattering crumbs beats tyre rubber, every time (16-brains.js). */
+    const crumbs = (b.hold <= 0 && (b.t % 1) < dt) ? grannyFeeding(b) : null;
+    if (crumbs){
+      const a = crumbs.feedFace !== undefined ? crumbs.feedFace : crumbs.h;
+      b.tx = crumbs.x + Math.cos(a) * 1.4 + (RND.beings() - 0.5) * 1.8;
+      b.ty = crumbs.y + Math.sin(a) * 1.4 + (RND.beings() - 0.5) * 1.8;
+      b.rubI = undefined; b.atCrumbs = true;
+    } else if (b.hold <= 0 && RUB.length && (b.t % 1) < dt){
       let bd = 26, bi = -1;
       for (let i = RUB.length - 1; i >= 0 && i > RUB.length - 240; i--){
         const r = RUB[i];
@@ -474,6 +481,7 @@ const BEHAVE = {
     const there = walkTo(b, dt, b.k.speed * (0.5 + 0.5 * Math.sin(b.anim * 3) ** 2));
     if (there){
       b.state = poseOr(b, b.fed > 6 ? 'overfed' : 'alert');
+      if (b.atCrumbs){ b.atCrumbs = false; b.fed++; }   // a crumb
       if (b.rubI !== undefined && b.rubI < RUB.length){
         RUB.splice(b.rubI, 1); b.rubI = undefined; b.fed++;   // pecked up
       }
@@ -848,6 +856,8 @@ function stepBeings(dt){
         /* And one who does remember the car may remember the wrong DAY: she
            sets off for where she parked it last time (16-brains.js). */
         if (b.life === 'toCar' && b.kind === 'granny' && !CENSUS.mute) grannyMisremember(b);
+        /* And then: straight off, a wee wander, or back in (16-brains.js). */
+        if (b.kind === 'granny') grannyAfterShop(b);
         continue;
       }
       /* --- back to where they left it */
@@ -1046,6 +1056,14 @@ function stepBeings(dt){
       }
       /* --- off into town, leaving the car where it is. The visit stays OPEN:
          they are off the map, not gone, and they will be back for it. */
+      /* --- a wee wander round before heading off (16-brains.js) */
+      if (b.life === 'wandering'){
+        b.wanderT -= dt;
+        b.state = b.look;
+        if (walkTo(b, dt, b.k.speed)) wanderTarget(b, 6);
+        if (b.wanderT <= 0){ b.life = b.wanderNext || 'toExit'; b.wanderNext = null; }
+        continue;
+      }
       if (b.life === 'toTown'){
         b.tx = g[0] - 2; b.ty = g[1];
         b.state = b.look;

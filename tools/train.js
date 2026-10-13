@@ -106,7 +106,7 @@ async function main(){
     T.rows.push({ round:0, note:'copied ' + samples.length + ' decisions, ' + (100 * cp.acc).toFixed(0) + '% the same', hand:G.mean(hd) });
     T.next = 1; save();
     say(''); console.log('\rround 0: ' + T.rows[0].note + ', hand-written day ' + num(T.rows[0].hand));
-    console.log('round  brain  hand   brain-hand  +/-    chats(b/h)   company(b/h)  wet s(b/h)   sheltered(b/h) gave up');
+    console.log('round  brain  hand   brain-hand  +/-    chats(b/h)   company(b/h)  wet s(b/h)   sheltered(b/h) gave up   linger(b/h)  wander(b/h)  fed gulls(b/h) mobbed(b/h)');
   }
   for (let k = T.next; k <= c.R; k++){
     const specs = [];
@@ -126,6 +126,8 @@ async function main(){
     console.log('\r' + String(k).padStart(5) + num(r.net) + num(r.hand) + '   ' + num(r.diff) + '  ' + num(r.se) +
                 '   ' + num(r.chats) + '/' + num(r.chatsH) + '  ' + num(r.company) + '/' + num(r.companyH) +
                 '   ' + num(r.wet) + '/' + num(r.wetH) + '   ' + num(r.shelter) + '/' + num(r.shelterH) + '   ' + num(r.gaveUp) +
+                '   ' + num(r.linger) + '/' + num(r.lingerH) + '  ' + num(r.wander) + '/' + num(r.wanderH) +
+                '  ' + num(r.gulls) + '/' + num(r.gullsH) + '  ' + num(r.mobbed) + '/' + num(r.mobbedH) +
                 (r.errs ? '   ' + r.errs + ' FAILED: ' + r.err : ''));
   }
   T.done = true; save();

@@ -15,7 +15,9 @@
               entertaining view; a convincing granny improves her own day AND
               the viewer's).
      WHEN     decision moments (her car is not there; another granny is in
-              chatting range; a shower has found her), not 120 times a second.
+              chatting range, or the chat is ending; a shower has found her;
+              she is out of the shop; a gull, on a sunny day), not 120 times
+              a second.
      SCORE    how she feels, as it happens (company good, wet and worry bad,
               time free - see GRANNY_FEEL); each choice is judged by the
               two minutes after it, her day by the lot.
@@ -55,7 +57,7 @@ SAVE_TOWN.push('BRAINS');                  // the learning is the town's, not th
 const GRANNY_SENSES = ['rain where she is', 'daylight', 'time without her car', 'how far she has searched',
   'distance to the doors', 'distance to where she parked', 'nearest moving car',
   'grannies nearby', 'a manager about', 'staff busy helping', 'just soaked', 'chats so far',
-  'umbrella up'];
+  'umbrella up', 'a car waiting on her', 'out of the house so far', 'gulls nearby'];
 function lostSecs(b){
   return (b.lostSecs || 0) + (b.lostAt !== undefined && b.lostAt !== null ? simClock - b.lostAt : 0);
 }
@@ -84,8 +86,23 @@ function grannySenses(b){
     HELP.length ? 1 : 0,
     b.soakUntil !== undefined && simClock < b.soakUntil ? 1 : 0,
     one((b.chats || 0) / 3),
-    brollyUp(b) ? 1 : 0
+    brollyUp(b) ? 1 : 0,
+    carWaitingNear(b) ? 1 : 0,
+    one((b.outF || 0) / GRANNY_FEEL.outCap),
+    one(gullsNear(b, 6) / 5)
   ];
+}
+/* A car stopped and waiting within six metres of her - she is in its way. */
+function carWaitingNear(b){
+  for (const c of CARS)
+    if ((c.blocked || 0) > 1 && Math.hypot(c.x - b.x, c.y - b.y) < 6) return true;
+  return false;
+}
+function gullsNear(b, r){
+  let n = 0;
+  for (const o of BEINGS)
+    if (o.kind === 'gull' && !beingAbsent(o) && o.z < 0.6 && Math.hypot(o.x - b.x, o.y - b.y) < r) n++;
+  return n;
 }
 
 /* ---------------------------------------------------------------- the decisions
@@ -114,13 +131,29 @@ const DECISIONS = {
             if (brollyOf(b)) return 'press on';
             const dr = nearestPlace(PLACES.doors, b.x, b.y);
             return Math.hypot(dr[0] - b.x, dr[1] - b.y) < 35 ? 'shelter' : 'press on';
-          } }
+          } },
+  /* A chat has run its course: part, or another wee minute. Both have to want
+     to. The hand-written granny parts. */
+  linger: { kind:'granny', senses:grannySenses,
+            actions:['part', 'another minute'],
+            hand:function(){ return 'part'; } },
+  /* Out of the shop: straight off, a wee wander round first, or back in for
+     the thing she forgot. The hand-written granny goes straight off. */
+  afterShop: { kind:'granny', senses:grannySenses,
+               actions:['go', 'wander', 'back in'],
+               hand:function(){ return 'go'; } },
+  /* A gull on a sunny day, and crumbs in her purse (Thomas, 2026-10-13). The
+     hand-written granny always feeds it. One gull is the best bit of her day;
+     a crowd of them is a fright. */
+  gulls: { kind:'granny', senses:grannySenses,
+           actions:['feed', 'walk on'],
+           hand:function(){ return 'feed'; } }
 };
 
 /* ---------------------------------------------------------------- a granny's moments
    Things that interrupt her walk. Returns true while one has her (the walk
    waits). Called for every granny with a visit, every step. */
-const GRANNY_WALKS = { toDoors:1, toCar:1, toExit:1, hunting:1 };
+const GRANNY_WALKS = { toDoors:1, toCar:1, toExit:1, hunting:1, wandering:1 };
 const GRANNY_MUDDLE = 0.15;      // a granny who drove, setting off for last time's space
 function grannyMoment(b, dt){
   const walking = GRANNY_WALKS[b.life] === 1 && !beingAbsent(b) && !b.held;
@@ -130,6 +163,14 @@ function grannyMoment(b, dt){
     b.chatT -= dt;
     b.moving = false; b.state = b.look;
     if (b.chatFace !== undefined) b.h = b.chatFace;
+    if (b.chatT <= 0 && b.chatMate) grannyLinger(b);
+    return true;
+  }
+  /* Scattering crumbs: stood still, facing the birds. */
+  if (b.feedT > 0){
+    b.feedT -= dt;
+    b.moving = false; b.state = b.look;
+    if (b.feedFace !== undefined) b.h = b.feedFace;
     return true;
   }
   /* Waiting out a shower at the doors: there, then until it eases - or two
@@ -153,7 +194,7 @@ function grannyMoment(b, dt){
     if (decide('rain', b) === 'shelter'){
       const dr = nearestPlace(PLACES.doors, b.x, b.y);
       b.shelter = [dr[0], dr[1] + 0.8];
-      b.shelterAt = null;
+      b.shelterAt = null; b.shelterCo = 0;
       if (!CENSUS.mute) CENSUS.ev.sheltered = (CENSUS.ev.sheltered || 0) + 1;
       return true;
     }
@@ -169,6 +210,7 @@ function grannyMoment(b, dt){
       (o.met = o.met || []).push(b.pid); if (o.met.length > 8) o.met.shift();
       if (decide('chat', b, { other:o }) === 'chat' && decide('chat', o, { other:b }) === 'chat'){
         b.chatT = o.chatT = 14 + RND.beings() * 16;       // the weather, and her hip
+        b.chatMate = o; o.chatMate = b; b.lingers = o.lingers = 0;
         b.chatFace = Math.atan2(o.y - b.y, o.x - b.x);
         o.chatFace = b.chatFace + Math.PI;
         b.chats = (b.chats || 0) + 1; o.chats = (o.chats || 0) + 1;
@@ -176,8 +218,73 @@ function grannyMoment(b, dt){
         return true;
       }
     }
+    /* A gull, on a sunny day, and she has not just been asked: crumbs? Twice
+       a visit at most - a purse only holds so many. */
+    if (b.life !== 'hunting' && WX.rain < 0.05 && daylight() > 0.7 && (b.feeds || 0) < 2 &&
+        simClock - (b.gullAsk === undefined ? -1e9 : b.gullAsk) > 90){
+      const gl = nearestGull(b, 12);
+      if (gl){
+        b.gullAsk = simClock;
+        if (decide('gulls', b, { gull:gl }) === 'feed'){
+          b.feedT = 15 + RND.beings() * 15;
+          b.feeds = (b.feeds || 0) + 1; b.mobbedNoted = false;
+          b.feedFace = Math.atan2(gl.y - b.y, gl.x - b.x);
+          if (!CENSUS.mute) CENSUS.ev.fedGulls = (CENSUS.ev.fedGulls || 0) + 1;
+          return true;
+        }
+      }
+    }
   }
   return false;
+}
+/* The chat has run its course. Another wee minute - if they both want one,
+   and not more than twice. */
+function grannyLinger(b){
+  const o = b.chatMate;
+  b.chatMate = null;
+  if (!o || o.chatMate !== b || !(o.chatT > 0) || (b.lingers || 0) >= 2) { if (o && o.chatMate === b) o.chatMate = null; return; }
+  if (decide('linger', b, { other:o }) === 'another minute' && decide('linger', o, { other:b }) === 'another minute'){
+    b.chatT = o.chatT = 15 + RND.beings() * 20;
+    b.chatMate = o;
+    b.lingers = (b.lingers || 0) + 1; o.lingers = (o.lingers || 0) + 1;
+    if (!CENSUS.mute) CENSUS.ev.lingered = (CENSUS.ev.lingered || 0) + 1;
+  } else o.chatMate = null;
+}
+function nearestGull(b, r){
+  let best = null, bd = r;
+  for (const o of BEINGS){
+    if (o.kind !== 'gull' || beingAbsent(o) || o.z > 0.6) continue;
+    const d = Math.hypot(o.x - b.x, o.y - b.y);
+    if (d < bd){ bd = d; best = o; }
+  }
+  return best;
+}
+/* For the gulls (12-beings.js): the nearest granny scattering crumbs, if any. */
+function grannyFeeding(g){
+  let best = null, bd = 30;
+  for (const o of BEINGS){
+    if (o.kind !== 'granny' || !(o.feedT > 0) || beingAbsent(o)) continue;
+    const d = Math.hypot(o.x - g.x, o.y - g.y);
+    if (d < bd){ bd = d; best = o; }
+  }
+  return best;
+}
+/* Out of the shop (12-beings.js calls this once a visit): straight off, a wee
+   wander round, or back in for the thing she forgot. */
+function grannyAfterShop(b){
+  if (b.afterAsked) return;
+  b.afterAsked = true;
+  const act = decide('afterShop', b);
+  if (act === 'wander'){
+    b.wanderNext = b.life; b.life = 'wandering';
+    b.wanderT = 60 + RND.beings() * 60;
+    wanderTarget(b, 6);
+    if (!CENSUS.mute) CENSUS.ev.wandered = (CENSUS.ev.wandered || 0) + 1;
+  } else if (act === 'back in'){
+    b.life = 'inStore'; b.inStore = true; b.backIn = true;
+    b.shopT = 45 + RND.beings() * 120;
+    if (!CENSUS.mute) CENSUS.ev.backIn = (CENSUS.ev.backIn || 0) + 1;
+  }
 }
 function chatPartner(b){
   for (const o of BEINGS){
@@ -198,13 +305,22 @@ function chatPartner(b){
    time at home with daytime TV and the cat. So TIME COSTS HER NOTHING here;
    company is the prize (a natter, being looked after by staff, waiting out a
    shower at the doors with others), and being out of the house is worth a
-   little in itself. What costs her is getting wet, worry, and losing the car. */
+   little in itself. What costs her is getting wet, worry, and losing the car.
+   Added the same day: the gulls (a joy, until there is a crowd of them),
+   being in somebody's way, and the light going. Sheltering's company is
+   capped per shower: the first long training learned to shelter at every
+   drop, because company at the doors paid without limit. */
 const GRANNY_FEEL = {
   wetPerMin:-0.3,       // out in the rain with nothing over her
   worryPerMin:-0.2,     // without her car - not the time, the worry
   chatPerMin:0.4,       // a natter
   helpedPerMin:0.2,     // being looked after by somebody from the shop
-  crowdPerMin:0.15,     // sheltering at the doors in company
+  crowdPerMin:0.15,     // sheltering at the doors in company...
+  crowdCap:0.08,        // ...but only so much of it a shower
+  birdsPerMin:0.4,      // a gull or two at her feet
+  mobbedPerMin:-0.5,    // three or more - a fright
+  inTheWayPerMin:-0.3,  // stood chatting or feeding while a car waits on her
+  duskPerMin:-0.2,      // still out as the light goes
   outPerMin:0.05,       // out of the house at all...
   outCap:1.0,           // ...up to twenty minutes' worth
   soaked:-0.3,          // each splash from a car
@@ -228,7 +344,20 @@ function grannyFeel(b, dt, walking){
   if (b.lostAt !== undefined && b.lostAt !== null) grannyFelt(b, 'worry', F.worryPerMin * m);
   if (b.chatT > 0) grannyFelt(b, 'company', F.chatPerMin * m);
   else if (b.life === 'waitHelp' || b.life === 'following') grannyFelt(b, 'company', F.helpedPerMin * m);
-  else if (b.shelterAt !== undefined && b.shelterAt !== null && somebodyNear(b, 4)) grannyFelt(b, 'company', F.crowdPerMin * m);
+  else if (b.shelterAt !== undefined && b.shelterAt !== null && (b.shelterCo || 0) < F.crowdCap && somebodyNear(b, 4)){
+    const v = Math.min(F.crowdCap - (b.shelterCo || 0), F.crowdPerMin * m);
+    b.shelterCo = (b.shelterCo || 0) + v;
+    grannyFelt(b, 'company', v);
+  }
+  if (b.feedT > 0){
+    const n = gullsNear(b, 3);
+    if (n >= 3){
+      grannyFelt(b, 'mobbed', F.mobbedPerMin * m);
+      if (!b.mobbedNoted){ b.mobbedNoted = true; if (!CENSUS.mute) CENSUS.ev.mobbed = (CENSUS.ev.mobbed || 0) + 1; }
+    } else if (n >= 1) grannyFelt(b, 'birds', F.birdsPerMin * m);
+  }
+  if ((b.chatT > 0 || b.feedT > 0) && carWaitingNear(b)) grannyFelt(b, 'inTheWay', F.inTheWayPerMin * m);
+  if (daylight() < 0.6) grannyFelt(b, 'dusk', F.duskPerMin * m);
   if ((b.outF || 0) < F.outCap){
     const v = Math.min(F.outCap - (b.outF || 0), F.outPerMin * m);
     b.outF = (b.outF || 0) + v;
@@ -292,21 +421,26 @@ const POLICIES = {
 };
 
 /* ---------------------------------------------------------------- the granny brain
-   Thomas, 2026-10-13: the hive (every granny's) has 22 neurons - 17 inputs
-   (her 13 senses and which of the 4 decisions this is) into 12 hidden, out to
-   10, one per option across the four menus. Each granny has 10 personal dials,
-   one per option, added to the hive's answer: her own leanings. */
+   The hive (every granny's): 23 inputs (her 16 senses and which of the 7
+   decisions this is) into 12 hidden neurons, out to 17 - one per option across
+   the seven menus. Each granny has 17 personal dials, one per option, added to
+   the hive's answer: her own leanings. (Started 2026-10-13 at 22 neurons and 10
+   dials, four decisions; grew with the menu the same day.) */
 /* GRANNY_DECS, GRANNY_SLOTS, GRANNY_SHAPE and grannyInput are in net.js,
    so the lab wires her up exactly as the game does. */
 /* The hive: her town's own if it has one, else the one shipped with the game
    (brains/granny.brain.js, trained in the lab). */
+/* A brain wired for a different menu (an older save, an older file) is no use
+   to her: it is set aside and she goes on the hand-written choices. */
+function grannyFits(n){ return !!(n && n.w1 && n.nIn === GRANNY_SHAPE.nIn && n.nOut === GRANNY_SHAPE.nOut); }
 function grannyHive(kb){
-  if (kb.kind && kb.kind.w1) return kb.kind;
-  if (window.GRANNY_BRAIN && window.GRANNY_BRAIN.net){ kb.kind = netCopy(window.GRANNY_BRAIN.net); return kb.kind; }
+  if (grannyFits(kb.kind)) return kb.kind;
+  if (window.GRANNY_BRAIN && grannyFits(window.GRANNY_BRAIN.net)){ kb.kind = netCopy(window.GRANNY_BRAIN.net); return kb.kind; }
   return null;
 }
 function grannyDials(pb){
-  if (!pb.dials) pb.dials = new Array(GRANNY_SHAPE.nOut).fill(0);
+  if (!pb.dials) pb.dials = [];
+  while (pb.dials.length < GRANNY_SHAPE.nOut) pb.dials.push(0);   // the menu grew
   return pb.dials;
 }
 /* Learning as the game goes: after her day, each choice she made gets a

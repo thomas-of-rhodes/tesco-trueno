@@ -125,12 +125,13 @@ function netStep(n, acc, lr, clip){
 }
 
 /* ---------------------------------------------------------------- the granny's wiring
-   Her 13 senses and a flag for which of her 4 decisions this is; one output
+   Her 16 senses and a flag for which of her 7 decisions this is; one output
    per option, the decisions' options side by side. Kept here, not in
    16-brains.js, so the lab feeds her exactly as the game does. */
-const GRANNY_DECS = ['lostCar', 'huntNext', 'chat', 'rain'];
-const GRANNY_SLOTS = { lostCar:[0, 1, 2], huntNext:[3, 4, 5], chat:[6, 7], rain:[8, 9] };
-const GRANNY_SHAPE = { nIn:17, nHid:12, nOut:10 };
+const GRANNY_DECS = ['lostCar', 'huntNext', 'chat', 'rain', 'linger', 'afterShop', 'gulls'];
+const GRANNY_SLOTS = { lostCar:[0, 1, 2], huntNext:[3, 4, 5], chat:[6, 7], rain:[8, 9],
+                       linger:[10, 11], afterShop:[12, 13, 14], gulls:[15, 16] };
+const GRANNY_SHAPE = { nIn:23, nHid:12, nOut:17 };     // 16 senses + 7 decision flags
 function grannyInput(s, name){
   const x = s.slice();
   for (const d of GRANNY_DECS) x.push(d === name ? 1 : 0);

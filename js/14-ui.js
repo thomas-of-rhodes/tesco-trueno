@@ -174,6 +174,11 @@ function thoughtOf(b){
                                                            'lovely day for the bus']);
   if (b.gaveUp && b.life === 'toExit') return pickLine(b, ['our Derek can come for it the morn',
                                                            'it\'ll turn up. things do.']);
+  if (gran && b.feedT > 0) return gullsNear(b, 3) >= 3 ? pickLine(b, ['shoo! SHOO!', 'oh for heaven\'s sake'])
+                                                         : pickLine(b, ['there you are, wee man', 'just a crumb for you']);
+  if (gran && b.life === 'wandering') return pickLine(b, ['lovely day for a wee wander', 'no rush']);
+  if (gran && b.backIn && b.life === 'inStore') return 'knew i\'d forget the milk';
+  if (gran && b.chatT > 0 && b.lingers > 0) return pickLine(b, ['oh, and did you hear about...', 'one more thing']);
   if (gran && b.chatT > 0) return pickLine(b, ['...and HER with the new hip',
                                                 'well you never know, do you',
                                                 'terrible about the weather']);
