@@ -625,9 +625,14 @@ function censusBeingOut(b){
   if (rec && how !== 'drove') closeVisit(rec, how);
 }
 function ownerOfBay(bay){
+  /* The bay's current owner first: an earlier owner can still be pointing at
+     it on her way out, and taking the first match marked HER as the driver
+     (2026-10-13: a staff member was then counted as vanished). */
+  if (bay.ownerCid)
+    for (const o of BEINGS) if (!o.gone && o.cid === bay.ownerCid) return o;
   for (const o of BEINGS){
     if (o.gone) continue;
-    if (o.ownBay === bay || (bay.ownerCid && o.cid === bay.ownerCid)) return o;
+    if (o.ownBay === bay) return o;
   }
   return null;
 }
@@ -1171,13 +1176,14 @@ function spawnDeparture(){
   return true;
 }
 
-/* Called by the being behaviour once its owner reaches the car. */
-function beginDeparture(bay){
+/* Called by the being behaviour once its owner reaches the car - and that
+   being, `who`, is the driver: said, not looked up. */
+function beginDeparture(bay, who){
   const model = bay.car ? bay.car.model : pickModel();
   const veh = bay.car ? bay.car.veh : null;
   /* Whoever is getting in is now IN the car, as far as the census goes - their
      visit stays open until the car is out of the gate. */
-  const drv = ownerOfBay(bay);
+  const drv = who || ownerOfBay(bay);
   if (drv){ drv.drove = true; if (veh) veh.ownerPid = drv.pid;
     if (drv.res && drv.res.visit && drv.res.visit.out === null) drv.res.visit.where = 'car'; }
   emptyBay(bay);

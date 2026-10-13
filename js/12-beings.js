@@ -923,7 +923,7 @@ function stepBeings(dt){
           b.wrongSpot = null;                   // there it is - wherever she thought it was
           /* Where she parked THIS time - which is the one she will remember next time. */
           if (b.res) b.res.lastSpot = bayStand(bay);
-          if (roomToLeave()){ beginDeparture(bay); b.gone = true; }
+          if (roomToLeave()){ beginDeparture(bay, b); b.gone = true; }
           /* No room on the aisle yet: wait by the car, which is what you do. */
           continue;
         }
@@ -1149,7 +1149,7 @@ function stepBeings(dt){
         const near = bx && Math.hypot(bx.x - b.x, bx.y - b.y) < 3.6;
         if (near || walkTo(b, dt, b.k.speed * 1.2)){
           if (near && roomToLeave()){
-            beginDeparture(b.toCar); b.toCar = null; b.gone = true;
+            beginDeparture(b.toCar, b); b.toCar = null; b.gone = true;
           }
         }
         continue;
@@ -1224,7 +1224,7 @@ function stepBeings(dt){
         const near = bx && Math.hypot(bx.x - b.x, bx.y - b.y) < 3.6;
         if (near || walkTo(b, dt, b.k.speed * 1.2)){
           if (near && roomToLeave()){
-            beginDeparture(own); b.away = true; b.leaving = false;
+            beginDeparture(own, b); b.away = true; b.leaving = false;
             /* The space is not theirs once they have driven out of it; holding
                on to it credited whoever parked there next to them, and that car
                was then never picked to leave. */

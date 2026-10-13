@@ -58,8 +58,9 @@ const BRAINS = {
 const BRAIN_NEW = {
   /* Gull brain v1.0 shipped 2026-10-13: the brain by default, its shared hive
      as shipped, each gull's own dials learning. */
-  /* Foxes (17-foxes.js): hand-written until a brain is trained for them. */
-  fox:function(){ return { policy:'hand', kind:{}, learnRate:0, dialRate:0.05, base:null, v:0,
+  /* Foxes (17-foxes.js): fox brain v1.0 shipped 2026-10-13 - the brain by
+     default, its shared hive as shipped, Rab's and Senga's own dials learning. */
+  fox:function(){ return { policy:'net', kind:{}, learnRate:0, dialRate:0.05, base:null, v:1,
                            made:{}, replay:[],
                            life:{ nightMins:0, feel:0, onMins:0, visits:0, bins:0, trolleys:0, splats:0,
                                   ate:0, pounces:0, pairMins:0, litMins:0, bolts:0, tipTrips:0 } }; },
@@ -737,6 +738,7 @@ function brainLearn(kb, pb, diary, kind){
    decision: the shipped hive, frozen; her own dials learning. */
 const GRANNY_BRAIN_V = 1;
 const GULL_BRAIN_V = 1;
+const FOX_BRAIN_V = 1;
 function decide(name, b, ctx){
   const dp = DECISIONS[name];
   const kb = brainOf(dp.kind);
@@ -745,6 +747,9 @@ function decide(name, b, ctx){
   }
   if (dp.kind === 'gull' && (kb.v || 0) < GULL_BRAIN_V){
     kb.v = GULL_BRAIN_V; kb.policy = 'net'; kb.learnRate = 0; kb.dialRate = 0.05; kb.kind = {};
+  }
+  if (dp.kind === 'fox' && (kb.v || 0) < FOX_BRAIN_V){
+    kb.v = FOX_BRAIN_V; kb.policy = 'net'; kb.learnRate = 0; kb.dialRate = 0.05; kb.kind = {};
   }
   const s = dp.senses(b, ctx);
   const pol = POLICIES[kb.policy] || POLICIES.hand;
