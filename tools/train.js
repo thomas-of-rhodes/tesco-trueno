@@ -31,6 +31,11 @@ const STATE = path.join(__dirname, '.train-state.json');
 for (const f of ['js/net.js', 'js/lab-train.js'])
   vm.runInThisContext(fs.readFileSync(path.join(root, f), 'utf8'), { filename:f });
 const G = globalThis;
+/* A top-level const in a script loaded this way is not a property of the
+   global object - reading it off G gave undefined, so the hand-written days
+   kept no diary and round 0 had nothing to copy (2026-10-13). By name. */
+const HAND_CODE = vm.runInThisContext('HAND_CODE');
+if (typeof HAND_CODE !== 'string') throw new Error('HAND_CODE missing from js/lab-train.js');
 
 function runOne(seed, ticks, code){
   return new Promise(function(done){
@@ -65,7 +70,8 @@ const num = function(x){
   if (x === null || x === undefined || !isFinite(x)) return '  -  ';
   return (x >= 0 ? ' ' : '') + x.toFixed(Math.abs(x) >= 10 ? 1 : 2);
 };
-const say = function(t){ process.stdout.write('\r' + t.padEnd(70)); };
+/* Progress on a terminal; to a file (a log), only the finished lines. */
+const say = function(t){ if (process.stdout.isTTY) process.stdout.write('\r' + t.padEnd(70)); };
 
 async function main(){
   let T = null;
@@ -87,12 +93,13 @@ async function main(){
 
   if (T.next === 0){
     const seeds = []; for (let i = 0; i < c.S; i++) seeds.push(c.seed0 + i);
-    const r0 = await runAll(seeds.map(function(sd){ return { seed:sd, ticks:c.ticks, code:G.HAND_CODE }; }), par,
+    const r0 = await runAll(seeds.map(function(sd){ return { seed:sd, ticks:c.ticks, code:HAND_CODE }; }), par,
                             function(f, n){ say('round 0: watching the hand-written grannies, ' + f + ' of ' + n); });
     const samples = [];
     for (const r of r0) if (r && r.tap) for (const e of r.tap) samples.push(e);
     const errs = r0.filter(function(r){ return !r || r.error; });
     if (errs.length) console.log('\n' + errs.length + ' runs failed: ' + String(errs[0].error).slice(0, 400));
+    if (!samples.length){ console.log('round 0 collected no decisions - stopping rather than train from noise'); process.exit(1); }
     const cp = G.copyHand(samples);
     T.hive = cp.hive;
     const hd = r0.filter(function(r){ return r && r.metrics && r.metrics.grannyDay !== null; }).map(function(r){ return r.metrics.grannyDay; });
@@ -106,7 +113,7 @@ async function main(){
     for (let i = 0; i < c.S; i++){
       const sd = c.seed0 + k * c.S + i;
       specs.push({ seed:sd, ticks:c.ticks, code:G.netCode(T.hive), arm:'net' });
-      specs.push({ seed:sd, ticks:c.ticks, code:G.HAND_CODE, arm:'hand' });
+      specs.push({ seed:sd, ticks:c.ticks, code:HAND_CODE, arm:'hand' });
     }
     const res = await runAll(specs, par, function(f, n){ say('round ' + k + ' of ' + c.R + ': ' + f + ' of ' + n + ' days'); });
     const rr = G.roundRow(k, specs, res);
