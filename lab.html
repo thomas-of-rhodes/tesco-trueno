@@ -408,20 +408,26 @@ function copyHand(samples){
   }
   return { hive:hive, acc:samples.length ? hit / samples.length : null };
 }
-/* After a round: REINFORCE. Each choice in a day is pushed by how that
-   granny's day compared with the round's average, in standard deviations. */
+/* After a round: REINFORCE, one choice at a time. Each choice is pushed by
+   what followed IT (its two minutes of her feelings) against what usually
+   follows that kind of choice this round, in standard deviations. */
 function learnFrom(hive, st, samples, lr){
+  samples = samples.filter(function(e){ return e.credit !== undefined && e.credit !== null; });
   if (!samples.length) return;
-  const sc = samples.map(function(e){ return e.score; });
-  const m = mean(sc);
-  const sd = Math.sqrt(mean(sc.map(function(x){ return (x - m) * (x - m); }))) || 1;
+  const by = {};
+  for (const e of samples) (by[e.d] = by[e.d] || []).push(e.credit);
+  const norm = {};
+  for (const d in by){
+    const m = mean(by[d]);
+    norm[d] = { m:m, sd:Math.sqrt(mean(by[d].map(function(x){ return (x - m) * (x - m); }))) || 1 };
+  }
   const chunks = 4, per = Math.ceil(samples.length / chunks);
   for (let c = 0; c < chunks; c++){
     const part = samples.slice(c * per, (c + 1) * per);
     if (!part.length) continue;
     const acc = netZero(hive);
     for (const e of part){
-      const adv = (e.score - m) / sd;
+      const adv = (e.credit - norm[e.d].m) / norm[e.d].sd;
       netGrad(hive, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv / part.length, acc);
     }
     netAdam(hive, acc, st, lr);
@@ -480,6 +486,7 @@ async function train(){
     const d = stats(diffs);
     const row = { round:k, net:mean(net), hand:mean(hand), diff:d ? d.m : null, se:d && d.se !== null ? 2 * d.se : null,
                   chats:mean(pick('net', 'grannyChats')), chatsH:mean(pick('hand', 'grannyChats')),
+                  company:mean(pick('net', 'grannyCompany')), companyH:mean(pick('hand', 'grannyCompany')),
                   lost:mean(pick('net', 'grannyLost')), lostH:mean(pick('hand', 'grannyLost')),
                   wet:mean(pick('net', 'grannyWet')), wetH:mean(pick('hand', 'grannyWet')),
                   gaveUp:mean(pick('net', 'gaveUp')), shelter:mean(pick('net', 'sheltered')), shelterH:mean(pick('hand', 'sheltered')),
@@ -496,16 +503,16 @@ async function train(){
 }
 function drawTrain(){
   let h = '<tr><th>round</th><th>brain\'s day</th><th>hand-written</th><th>brain&minus;hand</th><th>&plusmn;</th>' +
-          '<th>chats</th><th>s lost</th><th>s wet</th><th>sheltered</th><th>gave up</th><th>choices</th></tr>';
+          '<th>chats</th><th>company</th><th>s lost</th><th>s wet</th><th>sheltered</th><th>gave up</th><th>choices</th></tr>';
   const two = function(a, b){ return num(a) + ' <span class="dim">/ ' + num(b) + '</span>'; };
   for (const r of TRAIN.rows){
-    if (r.round === 0){ h += '<tr><td>0</td><td class="dim" colspan="10" style="text-align:left">' + r.note +
+    if (r.round === 0){ h += '<tr><td>0</td><td class="dim" colspan="11" style="text-align:left">' + r.note +
                             ' &middot; hand-written day ' + num(r.hand) + '</td></tr>'; continue; }
     const sig = r.diff !== null && r.se !== null && Math.abs(r.diff) > r.se;
     h += '<tr><td>' + r.round + (r.errs ? ' <span class="bad">' + r.errs + ' err</span>' : '') + '</td><td>' + num(r.net) +
          '</td><td class="dim">' + num(r.hand) + '</td><td class="' + (sig ? (r.diff > 0 ? 'ok' : 'bad') : 'dim') + '">' +
          (r.diff > 0 ? '+' : '') + num(r.diff) + '</td><td class="dim">' + num(r.se) + '</td><td>' + two(r.chats, r.chatsH) +
-         '</td><td>' + two(r.lost, r.lostH) + '</td><td>' + two(r.wet, r.wetH) + '</td><td>' + two(r.shelter, r.shelterH) +
+         '</td><td>' + two(r.company, r.companyH) + '</td><td>' + two(r.lost, r.lostH) + '</td><td>' + two(r.wet, r.wetH) + '</td><td>' + two(r.shelter, r.shelterH) +
          '</td><td>' + num(r.gaveUp) + '</td><td class="dim">' + r.n + '</td></tr>';
   }
   $('tRes').innerHTML = h;

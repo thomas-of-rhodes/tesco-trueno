@@ -16,8 +16,9 @@
               the viewer's).
      WHEN     decision moments (her car is not there; another granny is in
               chatting range; a shower has found her), not 120 times a second.
-     SCORE    how her day on the map went, in her terms, plus a smaller share
-              for the person watching. Scored when she leaves the map.
+     SCORE    how she feels, as it happens (company good, wet and worry bad,
+              time free - see GRANNY_FEEL); each choice is judged by the
+              two minutes after it, her day by the lot.
 
    What plugs in is a POLICY, chosen per kind in BRAINS[kind].policy:
      'hand'    the hand-written logic, unchanged - the default. A day with
@@ -123,8 +124,7 @@ const GRANNY_WALKS = { toDoors:1, toCar:1, toExit:1, hunting:1 };
 const GRANNY_MUDDLE = 0.15;      // a granny who drove, setting off for last time's space
 function grannyMoment(b, dt){
   const walking = GRANNY_WALKS[b.life] === 1 && !beingAbsent(b) && !b.held;
-  /* Her day: time out in the rain with nothing over her. */
-  if (walking && !b.shelter && rainHere(b.x, b.y) > 0.22 && !brollyUp(b)) b.wetSecs = (b.wetSecs || 0) + dt;
+  grannyFeel(b, dt, walking);
   /* Talking. Facing each other, going nowhere. */
   if (b.chatT > 0){
     b.chatT -= dt;
@@ -189,6 +189,66 @@ function chatPartner(b){
   }
   return null;
 }
+/* ---------------------------------------------------------------- how she feels
+   A running tally, added to as it happens. Each choice she makes is judged by
+   what this tally did in the CHOICE_SECS after it - not by her whole day,
+   where one good decision drowned in everything it had nothing to do with.
+
+   Thomas, 2026-10-13: grannies get lonely. A quick efficient trip is just more
+   time at home with daytime TV and the cat. So TIME COSTS HER NOTHING here;
+   company is the prize (a natter, being looked after by staff, waiting out a
+   shower at the doors with others), and being out of the house is worth a
+   little in itself. What costs her is getting wet, worry, and losing the car. */
+const GRANNY_FEEL = {
+  wetPerMin:-0.3,       // out in the rain with nothing over her
+  worryPerMin:-0.2,     // without her car - not the time, the worry
+  chatPerMin:0.4,       // a natter
+  helpedPerMin:0.2,     // being looked after by somebody from the shop
+  crowdPerMin:0.15,     // sheltering at the doors in company
+  outPerMin:0.05,       // out of the house at all...
+  outCap:1.0,           // ...up to twenty minutes' worth
+  soaked:-0.3,          // each splash from a car
+  gaveUp:-0.5,          // going home without the car
+  home:1.0, tay:-1.5,   // how the day ended (not any one choice's doing)
+  beforeDark:0.2, afterDark:-0.2
+};
+const CHOICE_SECS = 120;
+function grannyFelt(b, part, v){
+  const f = b.feelBy || (b.feelBy = {});
+  f[part] = (f[part] || 0) + v;
+  b.feel = (b.feel || 0) + v;
+}
+function grannyFeel(b, dt, walking){
+  if (beingAbsent(b) || b.held) return;
+  const F = GRANNY_FEEL, m = dt / 60;
+  if (walking && !b.shelter && rainHere(b.x, b.y) > 0.22 && !brollyUp(b)){
+    b.wetSecs = (b.wetSecs || 0) + dt;
+    grannyFelt(b, 'wet', F.wetPerMin * m);
+  }
+  if (b.lostAt !== undefined && b.lostAt !== null) grannyFelt(b, 'worry', F.worryPerMin * m);
+  if (b.chatT > 0) grannyFelt(b, 'company', F.chatPerMin * m);
+  else if (b.life === 'waitHelp' || b.life === 'following') grannyFelt(b, 'company', F.helpedPerMin * m);
+  else if (b.shelterAt !== undefined && b.shelterAt !== null && somebodyNear(b, 4)) grannyFelt(b, 'company', F.crowdPerMin * m);
+  if ((b.outF || 0) < F.outCap){
+    const v = Math.min(F.outCap - (b.outF || 0), F.outPerMin * m);
+    b.outF = (b.outF || 0) + v;
+    grannyFelt(b, 'out', v);
+  }
+  const so = b.soaks || 0;
+  if (so > (b.soaksFelt || 0)){ grannyFelt(b, 'soaked', F.soaked * (so - (b.soaksFelt || 0))); b.soaksFelt = so; }
+  if (b.gaveUp && !b.gaveUpFelt){ b.gaveUpFelt = true; grannyFelt(b, 'gaveUp', F.gaveUp); }
+  /* Choices whose two minutes are up: what came of them is now known. */
+  if (b.diary) for (const e of b.diary)
+    if (e.fH === undefined && e.f0 !== undefined && simClock - e.t >= CHOICE_SECS) e.fH = b.feel || 0;
+}
+function somebodyNear(b, r){
+  for (const o of BEINGS){
+    if (o === b || beingAbsent(o) || o.kind === 'gull' || o.kind === 'fox') continue;
+    if (Math.hypot(o.x - b.x, o.y - b.y) < r) return true;
+  }
+  return false;
+}
+
 /* Where she thinks she parked: where she DID park last time she came, or -
    if this is the first time we have seen her drive - her usual sort of spot,
    from who she is. */
@@ -250,29 +310,38 @@ function grannyDials(pb){
   return pb.dials;
 }
 /* Learning as the game goes: after her day, each choice she made gets a
-   little likelier if the day beat her usual, a little less if it did not.
-   The hive learns slowly from everybody; her dials faster, from her alone. */
-function grannyLearn(kb, pb, diary, score){
-  if (kb.base === null || kb.base === undefined){ kb.base = score; return; }
-  const adv = Math.max(-1.5, Math.min(1.5, score - kb.base));
-  kb.base += 0.02 * (score - kb.base);
+   little likelier if what followed it beat what usually follows that kind of
+   choice, a little less if not. The yardstick is per decision (a chat is not
+   measured against a lost car). The hive learns slowly from everybody; her
+   dials faster, from her alone. */
+function grannyLearn(kb, pb, diary){
   const net = grannyHive(kb);
-  if (!net || !diary.length || adv === 0) return;
+  if (!net || !diary.length) return;
+  const cb = kb.cbase || (kb.cbase = {});
+  const adv = diary.map(function(e){
+    if (cb[e.d] === undefined){ cb[e.d] = e.credit; return 0; }
+    const a = Math.max(-1.5, Math.min(1.5, e.credit - cb[e.d]));
+    cb[e.d] += 0.03 * (e.credit - cb[e.d]);
+    return a;
+  });
   if (kb.learnRate > 0){
     const acc = netZero(net);
-    for (const e of diary) netGrad(net, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv, acc, pb && pb.dials);
+    diary.forEach(function(e, i){
+      if (adv[i]) netGrad(net, grannyInput(e.s, e.d), GRANNY_SLOTS[e.d], e.a, adv[i], acc, pb && pb.dials);
+    });
     netStep(net, acc, kb.learnRate / diary.length, 0.05);
   }
   if (pb && kb.dialRate > 0){
     const dl = grannyDials(pb);
-    for (const e of diary){
+    diary.forEach(function(e, k){
+      if (!adv[k]) return;
       const sl = GRANNY_SLOTS[e.d];
       const c = netChances(netForward(net, grannyInput(e.s, e.d)).z, sl, dl);
       for (let i = 0; i < sl.length; i++){
-        dl[sl[i]] += kb.dialRate * adv * ((i === e.a ? 1 : 0) - c.p[i]);
+        dl[sl[i]] += kb.dialRate * adv[k] * ((i === e.a ? 1 : 0) - c.p[i]);
         dl[sl[i]] = Math.max(-1.5, Math.min(1.5, dl[sl[i]]));       // a leaning, not a personality transplant
       }
-    }
+    });
   }
 }
 
@@ -289,7 +358,7 @@ function decide(name, b, ctx){
     const m = kb.made[name] || (kb.made[name] = dp.actions.map(function(){ return 0; }));
     m[a]++;
     const di = b.diary || (b.diary = []);
-    di.push({ d:name, s:s, a:a, t:+simClock.toFixed(1) });
+    di.push({ d:name, s:s, a:a, t:+simClock.toFixed(1), f0:b.feel || 0 });
     if (di.length > DIARY_MAX) di.shift();
   }
   return dp.actions[a];
@@ -298,36 +367,27 @@ function decide(name, b, ctx){
 /* ---------------------------------------------------------------- her day
    Weights in one place, to be argued about. Her own day first; the chats
    count twice over because they are her day AND the scene. */
-const GRANNY_DAY = {
-  home:1.0,          // got home - walked, bus, or drove
-  tay:-1.5,          // did not
-  lostPer300s:-1.0,  // time spent without her car, up to five minutes
-  soaked:-0.3,       // each soaking, up to two
-  beforeDark:0.2,    // and they do want to be home before dark
-  afterDark:-0.2,
-  chat:0.15,         // each chat, up to three
-  rainPerMin:-0.3,   // out in the rain with nothing over her, up to two minutes
-  gaveUp:-0.5        // went home without the car: she has to come back for it
-};
+/* Her day: the tally of how she felt, plus how it ended. The ending is not
+   any one choice's doing, so it is in the day's score but not in a choice's. */
 function scoreGrannyDay(b, how){
   if (CENSUS.mute || b.kind !== 'granny') return null;
-  const W = GRANNY_DAY;
+  const F = GRANNY_FEEL;
   const lost = lostSecs(b);
-  const parts = {
-    home: (how === 'walked' || how === 'bus' || how === 'drove') ? W.home : (how === 'vanished' ? 0 : W.tay),
-    lost: W.lostPer300s * Math.min(1, lost / 300),
-    soaked: W.soaked * Math.min(2, b.soaks || 0),
-    dark: daylight() > 0.5 ? W.beforeDark : W.afterDark,
-    chats: W.chat * Math.min(3, b.chats || 0),
-    rain: W.rainPerMin * Math.min(2, (b.wetSecs || 0) / 60),
-    gaveUp: b.gaveUp ? W.gaveUp : 0
-  };
-  let total = 0;
-  for (const k in parts) total += parts[k];
-  total = +total.toFixed(3);
+  const parts = {};
+  for (const k in (b.feelBy || {})) parts[k] = +b.feelBy[k].toFixed(3);
+  parts.home = (how === 'walked' || how === 'bus' || how === 'drove') ? F.home : (how === 'vanished' ? 0 : F.tay);
+  parts.dark = daylight() > 0.5 ? F.beforeDark : F.afterDark;
+  const total = +((b.feel || 0) + parts.home + parts.dark).toFixed(3);
+  /* Choices still inside their two minutes are judged by what there was. */
+  for (const e of (b.diary || [])){
+    if (e.f0 === undefined) continue;
+    if (e.fH === undefined) e.fH = b.feel || 0;
+    e.credit = +(e.fH - e.f0).toFixed(4);
+  }
   const kb = BRAINS.granny;
   kb.days.n++; kb.days.sum += total; kb.days.lost += lost; kb.days.chats += b.chats || 0;
   kb.days.wet = (kb.days.wet || 0) + (b.wetSecs || 0);
+  kb.days.company = (kb.days.company || 0) + ((b.feelBy && b.feelBy.company) || 0);
   const vis = b.res && b.res.visit;
   if (vis) vis.day = { score:total, parts:parts };
   if (b.res){
@@ -335,12 +395,12 @@ function scoreGrannyDay(b, how){
     pb.n++; pb.mean += (total - pb.mean) / pb.n;
   }
   for (const e of (b.diary || [])){
-    const rec = { d:e.d, s:e.s, a:e.a, score:total, rid:b.res ? b.res.rid : null };
+    const rec = { d:e.d, s:e.s, a:e.a, score:total, credit:e.credit, rid:b.res ? b.res.rid : null };
     kb.replay.push(rec);
     if (kb.replay.length > REPLAY_MAX) kb.replay.shift();
     if (kb.tap) kb.tap.push(rec);           // the lab, collecting a run's experience
   }
-  if (kb.policy === 'net') grannyLearn(kb, b.res ? b.res.brain : null, b.diary || [], total);
+  if (kb.policy === 'net') grannyLearn(kb, b.res ? b.res.brain : null, (b.diary || []).filter(function(e){ return e.credit !== undefined; }));
   b.diary = [];
   return total;
 }

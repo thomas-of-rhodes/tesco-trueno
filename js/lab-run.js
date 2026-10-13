@@ -34,6 +34,7 @@ function labMetrics(){
     invented:ev.inventedDrivers || 0,
     gdN:BRAINS.granny.days.n, gdSum:BRAINS.granny.days.sum, gdLost:BRAINS.granny.days.lost,
     gdChats:BRAINS.granny.days.chats, gdWet:BRAINS.granny.days.wet || 0, gaveUp:ev.gaveUp || 0,
+    gdCompany:BRAINS.granny.days.company || 0,
     misremembered:ev.misremembered || 0, sheltered:ev.sheltered || 0, forgot:ev.forgot || 0
   };
 }
@@ -50,6 +51,7 @@ const LAB_ROWS = [
   ['grannyDay',    'a granny\'s day (score)',       'grannies',  'up'],
   ['grannyLost',   'seconds without her car, each', 'grannies',  'down'],
   ['grannyChats',  'chats, each',                   'grannies',  ''],
+  ['grannyCompany','company (score), each',         'grannies',  'up'],
   ['grannyWet',    'seconds out in the rain, each', 'grannies',  'down'],
   ['misremembered','went to last time\'s space',    'grannies',  ''],
   ['sheltered',    'waited out a shower',           'grannies',  ''],
@@ -129,6 +131,7 @@ function labRun(cfg, post){
       r.grannyLost = r.gdN > 0 ? r.gdLost / r.gdN : null;
       r.grannyChats = r.gdN > 0 ? r.gdChats / r.gdN : null;
       r.grannyWet = r.gdN > 0 ? r.gdWet / r.gdN : null;
+      r.grannyCompany = r.gdN > 0 ? r.gdCompany / r.gdN : null;
       r.jammed = samples ? jammed / samples : null;
       const c = census();
       const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;
