@@ -82,7 +82,12 @@ async function main(){
   if (!fresh && fs.existsSync(STATE)){
     T = JSON.parse(fs.readFileSync(STATE, 'utf8'));
     if (T.done) T = null;
-    else console.log('carrying on from round ' + T.next + ' (use --fresh to start again)');
+    else {
+      console.log('carrying on from round ' + T.next + ' (use --fresh to start again)');
+      /* A run can be carried on with a new pace or length: --lr, --rounds. */
+      if (process.argv.indexOf('--lr') >= 0){ T.cfg.lr = +arg('lr'); console.log('learning rate now ' + T.cfg.lr); }
+      if (process.argv.indexOf('--rounds') >= 0){ T.cfg.R = +arg('rounds'); console.log('rounds now ' + T.cfg.R); }
+    }
   }
   if (!T){
     T = { cfg:{ R:+arg('rounds', 8), S:+arg('days', 11), ticks:Math.round(+arg('secs', 600) * 120),
