@@ -55,11 +55,12 @@ const PEAK = [[0.00, 0.21], [0.20, 0.20], [0.27, 0.21], [0.34, 0.23],
               [0.42, 0.24], [0.50, 0.25], [0.58, 0.26], [0.64, 0.25],
               [0.71, 0.27], [0.78, 0.25], [0.84, 0.22], [0.92, 0.21],
               [1.00, 0.21]];
-function wantOccupancy(){
+function wantOccupancy(tod){
+  if (tod === undefined) tod = TOD;
   for (let i = 1; i < PEAK.length; i++){
-    if (TOD <= PEAK[i][0]){
+    if (tod <= PEAK[i][0]){
       const a = PEAK[i - 1], b = PEAK[i];
-      const u = (TOD - a[0]) / (b[0] - a[0]);
+      const u = (tod - a[0]) / (b[0] - a[0]);
       return a[1] + (b[1] - a[1]) * u;
     }
   }

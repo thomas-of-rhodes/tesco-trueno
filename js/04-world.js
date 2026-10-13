@@ -196,8 +196,15 @@ const SRY = Y1 - ROAD_W / 2;             // the road centreline, and the lorry o
 /* How full it is. This started at 0.72 - a Saturday lunchtime - which left him
    almost nowhere to go, so every driving test was really a test of squeezing past
    parked cars rather than of driving. It is the dial the peak-time calendar will
-   drive later; a weekday mid-morning is about a quarter full. */
-let OCCUPANCY = 0.26;
+   drive later; a weekday mid-morning is about a quarter full.
+   It was a fixed 0.26, which against each bay's `want` came to about 121 cars
+   when the curve at the opening hour asks for about 81, so every day began with
+   40 cars driving home for no reason and every short lab run measured that. Now
+   it is the curve's own level at the hour the day opens. Fixed at load rather
+   than read from the live TOD, because buildSite must build the same world every
+   time it is called - the suite rebuilds the live one and expects that. */
+const OPEN_TOD = 0.35;                   // TOD's starting value, in 11-cast-cameras
+let OCCUPANCY = wantOccupancy(OPEN_TOD);
 const BAYS = [];          // every bay, with the box it owns
 const CARS = [];          // the ones currently driving about
 /* A bay here is 2.55 wide by 4.8 deep, and one 1.85 x 4.4 box in every single one
@@ -377,8 +384,13 @@ function buildSite(){
      dynamic layer of real arrivals and departures on top. The curve modulates
      the layer the road can actually move, which is the only one it was ever
      going to be able to modulate. */
+  /* OCCUPANCY decides how many; `want` still decides WHERE (the prime row and
+     the store end first), scaled so the expected total is OCCUPANCY x bays. */
+  let wantSum = 0;
+  for (const b of BAYS) wantSum += b.want;
+  const fillK = wantSum > 0 ? OCCUPANCY * BAYS.length / wantSum : 0;
   for (const b of BAYS){
-    if (rnd() > OCCUPANCY * b.want) continue;
+    if (rnd() > fillK * b.want) continue;
     parkInBay(b, pickCar(rnd()), rnd, w);
     /* 0.78 left the departure channel with two candidate bays in the whole car
        park, so nothing could leave. Half is enough of a stable base to keep the
