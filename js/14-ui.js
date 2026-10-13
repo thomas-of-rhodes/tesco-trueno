@@ -172,6 +172,8 @@ function thoughtOf(b){
                                                           'i was ten minutes over']);
   if (b.forgot && b.life === 'toExit') return pickLine(b, ['i\'ll get the bus home, i think',
                                                            'lovely day for the bus']);
+  if (b.gaveUp && b.life === 'toExit') return pickLine(b, ['our Derek can come for it the morn',
+                                                           'it\'ll turn up. things do.']);
   if (b.toWork) return pickLine(b, ['clocking on', 'early shift. again.', 'right. tills.']);
   if (b.staff && (b.life === 'toCar' || b.life === 'outDoors'))
     return pickLine(b, ['end of shift. finally.', 'home, feet up', 'never again. see you tomorrow.']);

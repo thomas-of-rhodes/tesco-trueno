@@ -58,7 +58,7 @@ function pick01(id, salt){
 
 /* The streams, by subsystem. Adding a new one is safe; renaming one changes
    its sequence. */
-const STREAMS = ['traffic', 'weather', 'world', 'movers', 'scenery', 'beings', 'god'];
+const STREAMS = ['traffic', 'weather', 'world', 'movers', 'scenery', 'beings', 'god', 'brains'];
 const RNG = { seed:0, gens:{} };
 const RND = {};
 for (const name of STREAMS) RND[name] = function(){ return RNG.gens[name].next(); };
@@ -78,7 +78,8 @@ function saveRng(){
 }
 function loadRng(st){
   RNG.seed = st.seed;
-  for (const name of STREAMS) RNG.gens[name].s = st.s[name].slice();
+  /* A save from before a stream existed leaves that stream where the seed put it. */
+  for (const name of STREAMS) if (st.s[name]) RNG.gens[name].s = st.s[name].slice();
 }
 /* The test rigs run from fixed seeds of their own, one per run in order, so
    the suite is the same every time and still sees different days. */

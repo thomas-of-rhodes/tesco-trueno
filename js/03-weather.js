@@ -215,6 +215,7 @@ function puddleBurst(by, x, y, h, v){
     if (b.kind === 'gull' || b.kind === 'fox') continue;
     if (Math.hypot(b.x - x, b.y - y) > 3.2 + v * 0.12) continue;
     b.soakUntil = simClock + 25;
+    b.soaks = (b.soaks || 0) + 1;
     b.stareT = 1.6; b.stareAt = [x, y];
     wet++; RAIN.soaked++;
   }

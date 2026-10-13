@@ -31,7 +31,9 @@ function labMetrics(){
     tickets:ev.tickets || 0, towed:ev.towed || 0, soaked:RAIN.soaked,
     peopleTay:VOID.people + VOID.cast, carsTay:VOID.cars,
     vanishedCars:ev.carsVanished || 0, vanishedPeople:ev.peopleVanished || 0,
-    invented:ev.inventedDrivers || 0
+    invented:ev.inventedDrivers || 0,
+    gdN:BRAINS.granny.days.n, gdSum:BRAINS.granny.days.sum, gdLost:BRAINS.granny.days.lost,
+    gdChats:BRAINS.granny.days.chats, gaveUp:ev.gaveUp || 0
   };
 }
 /* The rows lab.html shows, in order: [key, label, group, better]. `better` is
@@ -44,6 +46,11 @@ const LAB_ROWS = [
   ['moving',       'cars on the move (mean)',       'traffic',   ''],
   ['people',       'people about (mean)',           'watching',  'up'],
   ['jammed',       'cars stuck over 8 s (mean)',    'watching',  'down'],
+  ['grannyDay',    'a granny\'s day (score)',       'grannies',  'up'],
+  ['grannyLost',   'seconds without her car, each', 'grannies',  'down'],
+  ['grannyChats',  'chats, each',                   'grannies',  ''],
+  ['gaveUp',       'gave up on her car',            'grannies',  'down'],
+  ['gdN',          'grannies scored',               'grannies',  ''],
   ['bumps',        'Trueno: bumps',                 'trueno',    'down'],
   ['sulks',        'Trueno: sulks',                 'trueno',    'down'],
   ['truenoTay',    'Trueno: into the Tay',          'trueno',    'down'],
@@ -113,6 +120,9 @@ function labRun(cfg, post){
       r.moving = samples ? moving / samples : null;
       r.raining = samples ? raining / samples : null;
       r.people = samples ? people / samples : null;
+      r.grannyDay = r.gdN > 0 ? r.gdSum / r.gdN : null;
+      r.grannyLost = r.gdN > 0 ? r.gdLost / r.gdN : null;
+      r.grannyChats = r.gdN > 0 ? r.gdChats / r.gdN : null;
       r.jammed = samples ? jammed / samples : null;
       const c = census();
       const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;

@@ -617,6 +617,8 @@ function censusBeingOut(b){
     censusNote('person vanished', (b.name || b.pid) + ' life ' + b.life);
   }
   else CENSUS.ev.peopleVoid++;
+  /* A granny's day on the map, for the brains (16-brains.js). */
+  if (b.kind === 'granny' && typeof scoreGrannyDay === 'function') scoreGrannyDay(b, how);
   /* Somebody who got into their car has not left - they are in it. Their visit
      closes when the CAR goes out of the gate. */
   if (rec && how !== 'drove') closeVisit(rec, how);

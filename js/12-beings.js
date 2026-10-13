@@ -506,12 +506,16 @@ const BEHAVE = {
     if (b.hold > 0){ b.hold -= dt; b.state = b.look; return; }
     const other = beingNear(b, ['granny'], 6.5);
     if (other && !other.chatted && !b.chatted){
-      b.chatted = other.chatted = true;
-      b.hold = other.hold = 14 + RND.beings() * 16;      // the weather
-      b.state = b.look; other.state = other.look;
-      b.h = Math.atan2(other.y - b.y, other.x - b.x);
-      other.h = b.h + Math.PI;
-      return;
+      b.chatted = other.chatted = true;      // asked once a meeting, whatever the answer
+      /* It takes two (16-brains.js). The hand-written granny always stops. */
+      if (decide('chat', b, { other:other }) === 'chat' && decide('chat', other, { other:b }) === 'chat'){
+        b.chats = (b.chats || 0) + 1; other.chats = (other.chats || 0) + 1;
+        b.hold = other.hold = 14 + RND.beings() * 16;      // the weather
+        b.state = b.look; other.state = other.look;
+        b.h = Math.atan2(other.y - b.y, other.x - b.x);
+        other.h = b.h + Math.PI;
+        return;
+      }
     }
     if (!other) b.chatted = false;
     /* A granny who can see another granny at any distance is already, slowly,
@@ -843,6 +847,8 @@ function stepBeings(dt){
       }
       /* --- back to where they left it */
       if (b.life === 'toCar'){
+        /* Found it (or been shown it): the time without it stops here. */
+        if (b.lostAt !== undefined && b.lostAt !== null){ b.lostSecs = lostSecs(b); b.lostAt = null; }
         const bay = b.ownBay;
         const bbx = (bay && bay.car) ? WORLD.boxes[bay.box] : null;
         /* NEAR CONTACT is what gets you in, not arriving at a particular square
@@ -877,6 +883,7 @@ function stepBeings(dt){
             b.life = 'muddled';
             b.muddleT = 3 + RND.beings() * 3.5;
             b.ownBay = null;
+            b.lostAt = simClock;
           }
         }
         continue;
@@ -895,10 +902,23 @@ function stepBeings(dt){
           continue;
         }
         if (b.muddleT <= 0){
-          b.life = 'hunting';
-          b.huntT = 60 + RND.beings() * 40;
-          b.huntRing = 0;
-          b.huntPicked = false;
+          /* What now (16-brains.js): look for it, go and ask, or go home and
+             sort it out another day. The hand-written granny looks. */
+          const act = decide('lostCar', b);
+          if (act === 'hunt'){
+            b.life = 'hunting';
+            b.huntT = 60 + RND.beings() * 40;
+            b.huntRing = 0;
+            b.huntPicked = false;
+          } else if (act === 'help'){
+            b.life = 'seekHelp';
+          } else {
+            /* Home without it - which makes it one of the abandoned, the
+               tickets and the truck in due course, same as a forgotten one. */
+            b.life = 'toExit'; b.gaveUp = true;
+            if (!CENSUS.mute) CENSUS.ev.gaveUp = (CENSUS.ev.gaveUp || 0) + 1;
+            censusNote('gave up on her car', b.name);
+          }
         }
         continue;
       }
@@ -940,8 +960,11 @@ function stepBeings(dt){
             b.life = 'toCar';
             continue;
           }
-          /* Not here either. Try another space, a little further out each time. */
-          b.huntRing = Math.min(5, (b.huntRing || 0) + 1);
+          /* Not here either (16-brains.js): a little further out, round here
+             again, or give up and go and ask. The hand-written granny widens. */
+          const act = decide('huntNext', b);
+          if (act === 'help'){ b.life = 'seekHelp'; continue; }
+          if (act === 'wider') b.huntRing = Math.min(5, (b.huntRing || 0) + 1);
           const rad = 6 + b.huntRing * 7;
           let best = null, bd = 1e9;
           for (const bay of BAYS){
