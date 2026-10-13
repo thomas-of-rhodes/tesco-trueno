@@ -41,7 +41,12 @@ function labMetrics(){
     glMins:brainOf('gull').life.mins, glFeel:brainOf('gull').life.feel, glFood:brainOf('gull').life.food,
     glFlock:brainOf('gull').life.flock, glFright:brainOf('gull').life.frights, gullHeld:brainOf('gull').life.held,
     gullCrumbs:brainOf('gull').life.crumbs, glHeavy:brainOf('gull').life.heavy,
-    gullLeft:brainOf('gull').life.left, gullArrived:brainOf('gull').life.arrived
+    gullLeft:brainOf('gull').life.left, gullArrived:brainOf('gull').life.arrived,
+    fxNight:brainOf('fox').life.nightMins, fxFeel:brainOf('fox').life.feel, fxOn:brainOf('fox').life.onMins,
+    foxVisits:brainOf('fox').life.visits, foxBins:brainOf('fox').life.bins, foxTrolleys:brainOf('fox').life.trolleys,
+    foxSplats:brainOf('fox').life.splats, foxPounces:brainOf('fox').life.pounces, fxPair:brainOf('fox').life.pairMins,
+    fxLit:brainOf('fox').life.litMins, foxBolts:brainOf('fox').life.bolts, foxTip:brainOf('fox').life.tipTrips,
+    tidied:ev.tidied || 0, trolleysRighted:ev.trolleysRighted || 0, moans:ev.moans || 0, staffTidied:ev.staffTidied || 0
   };
 }
 /* The rows lab.html shows, in order: [key, label, group, better]. `better` is
@@ -78,6 +83,21 @@ const LAB_ROWS = [
   ['gullHeavy',    'share of time too heavy to fly', 'gulls',     'down'],
   ['gullLeft',     'gave up - tip or Tay',          'gulls',     'down'],
   ['gullArrived',  'new gulls flew in',             'gulls',     ''],
+  ['foxHappy',     'a fox\'s night (feel a minute)', 'foxes',    'up'],
+  ['foxVisits',    'visits to the car park',        'foxes',     ''],
+  ['foxOnShare',   'share of the night on the car park', 'foxes', ''],
+  ['foxBins',      'bins tipped',                   'foxes',     ''],
+  ['foxTrolleys',  'trolleys tipped (carrots)',     'foxes',     ''],
+  ['foxSplats',    'gull splats eaten',             'foxes',     ''],
+  ['foxPounces',   'pounces at gulls',              'foxes',     ''],
+  ['foxPairShare', 'share of a visit together',     'foxes',     'up'],
+  ['foxLitShare',  'share of a visit in lamplight', 'foxes',     'down'],
+  ['foxBolts',     'made to bolt',                  'foxes',     'down'],
+  ['foxTip',       'trips to the tip',              'foxes',     ''],
+  ['tidied',       'Ralph swept up',                'foxes',     ''],
+  ['trolleysRighted','Kyle righted a trolley',      'foxes',     ''],
+  ['moans',        'boomers moaned about the mess', 'foxes',     ''],
+  ['staffTidied',  'Derek/Gordon/Kyle tidied (on a moan)', 'foxes', ''],
   ['bumps',        'Trueno: bumps',                 'trueno',    'down'],
   ['sulks',        'Trueno: sulks',                 'trueno',    'down'],
   ['truenoTay',    'Trueno: into the Tay',          'trueno',    'down'],
@@ -157,6 +177,10 @@ function labRun(cfg, post){
       r.gullFlock = r.glMins > 0 ? r.glFlock / r.glMins : null;
       r.gullFright = r.glMins > 0 ? 60 * r.glFright / r.glMins : null;
       r.gullHeavy = r.glMins > 0 ? r.glHeavy / r.glMins : null;
+      r.foxHappy = r.fxNight > 0 ? r.fxFeel / r.fxNight : null;
+      r.foxOnShare = r.fxNight > 0 ? r.fxOn / r.fxNight : null;
+      r.foxPairShare = r.fxOn > 0 ? r.fxPair / r.fxOn : null;
+      r.foxLitShare = r.fxOn > 0 ? r.fxLit / r.fxOn : null;
       r.jammed = samples ? jammed / samples : null;
       const c = census();
       const abandoned = BAYS.filter(function(q){ return q.car && q.abandonedAt !== undefined; }).length;

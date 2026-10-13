@@ -98,13 +98,16 @@ function trainStats(xs){
   return { n:n, m:m, se:n > 1 ? sd / Math.sqrt(n) : null };
 }
 /* What each kind is judged by, and the readings shown beside it: [label, metric]. */
-const KIND_SCORE = { granny:'grannyDay', gull:'gullHappy' };
+const KIND_SCORE = { granny:'grannyDay', gull:'gullHappy', fox:'foxHappy' };
 const KIND_READS = {
   granny:[['chats', 'grannyChats'], ['company', 'grannyCompany'], ['wet s', 'grannyWet'], ['sheltered', 'sheltered'],
           ['linger', 'lingered'], ['wander', 'wandered'], ['fed gulls', 'fedGulls'], ['mobbed', 'mobbed']],
   gull:  [['food/min', 'gullFood'], ['in company', 'gullFlock'], ['frights/hr', 'gullFright'],
           ['held nerve', 'gullHeld'], ['too heavy', 'gullHeavy'], ['gave up', 'gullLeft'], ['crumbs', 'gullCrumbs'],
-          ['mobbing', 'mobbed']]
+          ['mobbing', 'mobbed']],
+  fox:   [['visits', 'foxVisits'], ['on site', 'foxOnShare'], ['bins', 'foxBins'], ['trolleys', 'foxTrolleys'],
+          ['splats', 'foxSplats'], ['pounces', 'foxPounces'], ['together', 'foxPairShare'], ['in light', 'foxLitShare'],
+          ['bolted', 'foxBolts'], ['tip', 'foxTip']]
 };
 function roundRow(k, specs, res, kind){
   kind = kind || 'granny';

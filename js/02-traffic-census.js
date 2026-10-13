@@ -1098,6 +1098,14 @@ function spawnDeparture(){
     /* Staff at work are not leaving because the car park would like a space. */
     const offr = offMapOwner(b);
     if (offr && (offr.visit.where === 'work' || offr.visit.where === 'town')) continue;
+    /* Its owner has gone home without it - forgot she drove, or gave up on it
+       (2026-10-13: the census caught a driver invented for each). It stays,
+       for the tickets and the truck, and nobody drives it away. */
+    const vv = b.car.veh;
+    if (vv && vv.ownerRid !== null && vv.ownerRid !== undefined){
+      const rr = TOWN[vv.ownerRid];
+      if (rr && !(rr.visit && rr.visit.out === null)) continue;
+    }
     /* The far end goes first in the evening, the prime row clings on. */
     const sc = (1.6 - b.want) * (0.5 + RND.traffic());
     if (sc > bs){ bs = sc; best = b; }

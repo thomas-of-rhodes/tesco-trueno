@@ -1156,9 +1156,11 @@ function bayStand(bay){
 }
 
 function onShift(b){
-  if (b.kind === 'fox') return isNight();
+  if (b.kind === 'fox') return true;        // it keeps its own hours (17-foxes.js)
   if (b.kind === 'gull') return !isNight();
   if (b.kind === 'granny') return shiftEdge(b, 0.28, 0.72);
+  /* Ralph: a half day, from seven in the morning (Thomas) - 7 till 11. */
+  if (b.kind === 'cleaner') return TOD > 7 / 24 && TOD < 11 / 24;
   if (b.kind === 'shopper') return shiftEdge(b, 0.22, 0.80);
   /* Kyle never clocks off. He has no shift, no car and no home to go to; he
      is simply always here, pushing trolleys (Thomas, 2026-10-12: a joke on
@@ -1177,6 +1179,9 @@ const KINDS = {
   granny:    { sprite:'granny',    r:0.45, speed:0.50, solid:true },
   shopper:   { sprite:'shopper',   r:0.45, speed:1.85, solid:true },
   trolleyboy:{ sprite:'trolleyboy',r:0.45, speed:1.25, solid:true },
+  /* Ralph (Thomas, 2026-10-13): the cleaner, with his cart and his broom.
+     Borrows Kyle's sprite until he is drawn in the sprite editor. */
+  cleaner:   { sprite:'trolleyboy', r:0.45, speed:0.95, solid:true },
   manager:   { sprite:'manager',   r:0.45, speed:1.45, solid:true }
 };
 

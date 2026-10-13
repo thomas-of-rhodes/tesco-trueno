@@ -426,6 +426,7 @@ function render(){
   }
   for (const ly of [-28, -16]) lineAt(-20, ly, 340, ly, 'rgba(228,198,92,0.45)', 1.1);
 
+  drawFoxGround();                     // rubbish and splats (17-foxes.js)
   if (trace) for (const m of RUB){
     const p = P(m[0], m[1]);
     g2.fillStyle = 'rgba(14,16,18,' + (0.12 + 0.36 * m[2]).toFixed(3) + ')';
@@ -544,6 +545,7 @@ function render(){
     for (const q of trolleyParts(m)) items.push(q);
     fadeFrom(m, n0);
   }
+  for (const q of foxWorldItems()) items.push(q);      // the bins (17-foxes.js)
   for (const b of BEINGS){
     if (beingAbsent(b)) continue;
     n0 = items.length;

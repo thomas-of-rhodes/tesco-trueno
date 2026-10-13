@@ -58,6 +58,11 @@ const BRAINS = {
 const BRAIN_NEW = {
   /* Gull brain v1.0 shipped 2026-10-13: the brain by default, its shared hive
      as shipped, each gull's own dials learning. */
+  /* Foxes (17-foxes.js): hand-written until a brain is trained for them. */
+  fox:function(){ return { policy:'hand', kind:{}, learnRate:0, dialRate:0.05, base:null, v:0,
+                           made:{}, replay:[],
+                           life:{ nightMins:0, feel:0, onMins:0, visits:0, bins:0, trolleys:0, splats:0,
+                                  ate:0, pounces:0, pairMins:0, litMins:0, bolts:0, tipTrips:0 } }; },
   gull:function(){ return { policy:'net', kind:{}, learnRate:0, dialRate:0.05, base:null, v:1,
                             made:{}, replay:[],
                             life:{ mins:0, feel:0, food:0, flock:0, frights:0, held:0, crumbs:0,
@@ -67,6 +72,7 @@ function brainOf(kind){
   return BRAINS[kind] || (BRAINS[kind] = BRAIN_NEW[kind]());
 }
 brainOf('gull');
+brainOf('fox');
 const REPLAY_MAX = 400, DIARY_MAX = 40;
 SAVE_TOWN.push('BRAINS');                  // the learning is the town's, not the day's
 
@@ -176,7 +182,30 @@ const DECISIONS = {
      instinct, not a choice - 12-beings.js). The hand-written gull flies. */
   gullThreat: { kind:'gull', senses:gullSenses,
                 actions:['fly', 'hold'],
-                hand:function(){ return 'fly'; } }
+                hand:function(){ return 'fly'; } },
+
+  /* ---- the foxes (17-foxes.js). Off the map, now and then by night: visit
+     the car park, go to the tip, or rest. The hand-written fox visits once
+     its nerve is back, goes to the tip if very hungry, else rests. */
+  foxGo: { kind:'fox', senses:function(b){ return foxSenses(b); },
+           actions:['visit', 'tip', 'rest'],
+           hand:function(b){ return (b.nerve || 0) >= 0.9 ? 'visit' : (b.hunger || 0) > 0.6 ? 'tip' : 'rest'; } },
+  /* On the car park, every few seconds. Hand-written: under a car if it is
+     raining on it, forage if hungry, find the other fox, else prowl. */
+  foxNext: { kind:'fox', senses:function(b){ return foxSenses(b); },
+             actions:['forage', 'stalk', 'watch', 'join', 'prowl', 'shelter', 'leave'],
+             hand:function(b){
+               if (rainHere(b.x, b.y) > 0.3) return 'shelter';
+               if ((b.hunger || 0) > 0.35) return 'forage';
+               const of = otherFox(b);
+               if (of && !of.away && Math.hypot(of.x - b.x, of.y - b.y) > 6) return 'join';
+               return 'prowl';
+             } },
+  /* A person inside its fear distance (closer than that is instinct: it
+     bolts). The hand-written fox bolts. */
+  foxThreat: { kind:'fox', senses:function(b){ return foxSenses(b); },
+               actions:['bolt', 'freeze', 'slink'],
+               hand:function(){ return 'bolt'; } }
 };
 
 /* ---------------------------------------------------------------- a granny's moments
@@ -440,7 +469,7 @@ function gullPace(b){
   return k;
 }
 function gullGrounded(b){ return (b.fat || 0) >= GULL_FAT.grounded; }
-const COMPANY_KINDS = { gull:1, granny:1, shopper:1, trolleyboy:1, manager:1 };
+const COMPANY_KINDS = { gull:1, granny:1, shopper:1, trolleyboy:1, manager:1, cleaner:1 };
 function gullFelt(b, part, v){
   b.feel = (b.feel || 0) + v;
   const f = b.feelBy || (b.feelBy = {});
@@ -721,7 +750,7 @@ function decide(name, b, ctx){
   const pol = POLICIES[kb.policy] || POLICIES.hand;
   /* Her own dials live with the resident; a gull keeps its own on itself. */
   const pb = b.res ? (b.res.brain || (b.res.brain = { n:0, mean:0, bias:{} }))
-           : b.kind === 'gull' ? (b.brain || (b.brain = { n:0, mean:0, bias:{} })) : null;
+           : (b.kind === 'gull' || b.kind === 'fox') ? (b.brain || (b.brain = { n:0, mean:0, bias:{} })) : null;
   let a = pol(dp, b, s, kb, pb, ctx, name);
   if (typeof a === 'string') a = dp.actions.indexOf(a);
   if (!(a >= 0 && a < dp.actions.length)) a = dp.actions.indexOf(dp.hand(b, ctx));

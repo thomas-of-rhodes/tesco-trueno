@@ -156,13 +156,27 @@ function gullInput(s, name){
   return x;
 }
 
+/* ---------------------------------------------------------------- the fox's wiring
+   16 senses and which of its 3 decisions: off the map - visit / the tip /
+   rest; on it - forage / stalk a gull / watch a person / join the other fox /
+   prowl / get under a car / leave; a person coming - bolt / freeze / slink. */
+const FOX_DECS = ['foxGo', 'foxNext', 'foxThreat'];
+const FOX_SLOTS = { foxGo:[0, 1, 2], foxNext:[3, 4, 5, 6, 7, 8, 9], foxThreat:[10, 11, 12] };
+const FOX_SHAPE = { nIn:19, nHid:10, nOut:13 };
+function foxInput(s, name){
+  const x = s.slice();
+  for (const d of FOX_DECS) x.push(d === name ? 1 : 0);
+  return x;
+}
+
 /* ---------------------------------------------------------------- every kind
    Which wiring a decision belongs to, so the game, the lab and the trainer can
    handle any kind of being the same way. `shipped` is the global a trained
    brain file sets (brains/<kind>.brain.js). */
 const WIRING = {
   granny:{ decs:GRANNY_DECS, slots:GRANNY_SLOTS, shape:GRANNY_SHAPE, input:grannyInput, shipped:'GRANNY_BRAIN' },
-  gull:  { decs:GULL_DECS,   slots:GULL_SLOTS,   shape:GULL_SHAPE,   input:gullInput,   shipped:'GULL_BRAIN' }
+  gull:  { decs:GULL_DECS,   slots:GULL_SLOTS,   shape:GULL_SHAPE,   input:gullInput,   shipped:'GULL_BRAIN' },
+  fox:   { decs:FOX_DECS,    slots:FOX_SLOTS,    shape:FOX_SHAPE,    input:foxInput,    shipped:'FOX_BRAIN' }
 };
 const DEC_KIND = {};
 for (const k in WIRING) for (const d of WIRING[k].decs) DEC_KIND[d] = k;

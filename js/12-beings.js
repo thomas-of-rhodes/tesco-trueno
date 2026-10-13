@@ -403,6 +403,7 @@ const BEHAVE = {
         const away = Math.atan2(b.y - car.y, b.x - car.x);
         b.tx = b.x + Math.cos(away) * 14; b.ty = b.y + Math.sin(away) * 14;
         b.hold = 2.2;
+        gullSplat(b);                      // and leaves something behind (Thomas; 17-foxes.js)
       } else {
         b.nerveT = 0.8;
         if (!CENSUS.mute) brainOf('gull').life.held++;
@@ -486,11 +487,15 @@ const BEHAVE = {
     }
     /* A granny scattering crumbs beats tyre rubber, every time (16-brains.js). */
     const crumbs = (tick1 && plan === 'forage') ? grannyFeeding(b) : null;
+    /* Then a fox's leavings - the rubbish from a tipped bin (17-foxes.js). */
+    const litter = (tick1 && plan === 'forage' && !crumbs) ? nearestRubbish(b, 26) : null;
     if (crumbs){
       const a = crumbs.feedFace !== undefined ? crumbs.feedFace : crumbs.h;
       b.tx = crumbs.x + Math.cos(a) * 1.4 + (RND.beings() - 0.5) * 1.8;
       b.ty = crumbs.y + Math.sin(a) * 1.4 + (RND.beings() - 0.5) * 1.8;
       b.rubI = undefined; b.atCrumbs = crumbs;
+    } else if (litter){
+      b.tx = litter.x; b.ty = litter.y; b.rubI = undefined; b.atCrumbs = null; b.atRubbish = litter;
     } else if (tick1 && plan === 'forage' && RUB.length){
       let bd = 26, bi = -1;
       for (let i = RUB.length - 1; i >= 0 && i > RUB.length - 240; i--){
@@ -509,6 +514,10 @@ const BEHAVE = {
     if (there){
       b.state = poseOr(b, b.fed > 6 ? 'overfed' : 'alert');
       /* A crumb - if there are any left by the time it gets there. */
+      if (b.atRubbish){
+        const i = RUBBISH.indexOf(b.atRubbish); b.atRubbish = null;
+        if (i >= 0){ RUBBISH.splice(i, 1); b.fed++; }
+      }
       if (b.atCrumbs){
         const g = b.atCrumbs; b.atCrumbs = null;
         if (g.crumbs > 0){ g.crumbs--; b.fed++; if (!CENSUS.mute) brainOf('gull').life.crumbs++; }
@@ -522,22 +531,10 @@ const BEHAVE = {
 
   /* Night shift. Same scavenging niche, but solitary, ground-bound, and it wants
      nothing to do with anybody. */
-  fox: function(b, dt){
-    if (!isNight()){ b.hold = 0; b.state = poseOr(b, 'trot');
-      b.tx = X0 + 4; b.ty = Y1 - 2; walkTo(b, dt, 3.2); return; }
-    const p = beingNear(b, ['granny', 'shopper', 'trolleyboy', 'manager'], 14);
-    if (p || carThreat(b) > 0.15){
-      const ax = p ? p.x : car.x, ay = p ? p.y : car.y;
-      const away = Math.atan2(b.y - ay, b.x - ax);
-      b.tx = b.x + Math.cos(away) * 20; b.ty = b.y + Math.sin(away) * 20;
-      b.state = poseOr(b, 'trot'); walkTo(b, dt, 4.4); return;
-    }
-    if (b.hold > 0){ b.hold -= dt; b.state = poseOr(b, 'sniff'); return; }
-    if (walkTo(b, dt, b.k.speed)){
-      b.state = poseOr(b, 'sniff'); b.hold = 1.5 + RND.beings() * 3;
-      wanderTarget(b, 5);
-    } else b.state = poseOr(b, Math.sin(b.anim * 2) > 0.9 ? 'alert' : 'trot');
-  },
+  /* All of it is in 17-foxes.js now: a visit, its nerve, its choices. */
+  fox: function(b, dt){ foxOnMap(b, dt); },
+  /* Ralph, with his cart and broom (17-foxes.js). */
+  cleaner: function(b, dt){ cleanerStep(b, dt); },
 
   /* They survived wars. They are in no hurry, they do not see the gulls, and it
      has not occurred to them that the aisle is for cars. */
@@ -577,6 +574,9 @@ const BEHAVE = {
   /* Underpaid. Collects the strays, smokes, feeds the gulls, and keeps half an
      eye out for the Manager. */
   trolleyboy: function(b, dt){
+    if (b.grumbleT > 0) b.grumbleT -= dt;
+    /* A boomer has moaned about some mess, and he is free: he sorts it (17-foxes.js). */
+    if (!b.job && !b.carry && staffAnswer(b, dt)) return;
     /* A job from the Manager outranks the trolleys, and he is glad of it. */
     if (b.job) b.hold = 0;
     if (b.job){
@@ -653,7 +653,11 @@ const BEHAVE = {
     }
     if (!best){ b.hold = 8 + RND.beings() * 14; b.state = poseOr(b, 'smoking'); return; }
     b.tx = best.x; b.ty = best.y;
-    if (walkTo(b, dt, b.k.speed)){ b.carry = best; best.held = true; }
+    if (walkTo(b, dt, b.k.speed)){
+      /* On its side again, licked clean (17-foxes.js). He rights it, and says so. */
+      if (best.tipped){ b.grumbleT = 4; if (!CENSUS.mute) CENSUS.ev.trolleysRighted = (CENSUS.ev.trolleysRighted || 0) + 1; }
+      b.carry = best; best.held = true;
+    }
     else b.state = b.look;
   },
 
@@ -663,6 +667,9 @@ const BEHAVE = {
   manager: function(b, dt){
 
     if (b.hold > 0){ b.hold -= dt; b.state = b.look; return; }
+    if (b.grumbleT > 0) b.grumbleT -= dt;
+    /* A boomer has moaned about the mess: it has to be seen to (17-foxes.js). */
+    if (staffAnswer(b, dt)) return;
     /* The ticket round, before the gulls and before the door: an abandoned car
        is the one thing on the car park that is officially his problem. Walk
        out to it, stand there writing for a couple of seconds, stick it on. */
@@ -806,6 +813,7 @@ function stepHelp(dt){
 
 function stepBeings(dt){
   gullTopUp(dt);                          // a gull short? one flies in (16-brains.js)
+  foxWorldStep(dt);                       // bins, carrot scraps, splats (17-foxes.js)
   const was = TOD;
   /* Only the CLOCK speeds up, never the physics - the point is to reach dusk
      sooner, not to watch a car park on fast forward. */
@@ -827,6 +835,8 @@ function stepBeings(dt){
       b.moving = false; b.state = b.look;
       continue;
     }
+    /* A fox off the car park (its den, the tip) is handled entirely there. */
+    if (b.kind === 'fox' && foxStep(b, dt)) continue;
     const want = onShift(b);
     const g = gateSpot();
 
@@ -1319,6 +1329,7 @@ function seedCast(){
   put('granny', 5, 6);
   put('shopper', 6, 6);
   put('trolleyboy', 1, 8);
+  put('cleaner', 1, 8);
   put('manager', 1, 8);
   put('fox', 2, 4);
   /* The night manager. Made AFTER the seeded draws, at a fixed spot by the

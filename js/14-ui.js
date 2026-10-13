@@ -28,6 +28,8 @@ function thoughtOf(b){
      everybody else - they are just having them at the wheel. Temper picks the
      register: the Jazz is in no rush and the A4 is already late. */
   if (b.model){
+    if (b.moanT > 0) return pickLine(b, ['who\'s going to clean THAT up', 'disgraceful. DISGRACEFUL.',
+                                         'in my day...', 'i shall be writing to tesco']);
     if (b.tow) return b.tow.loaded ? pickLine(b, ['nobody ever comes back for these', 'right. home.',
                                                   'another one for the pound'])
                                    : pickLine(b, ['just doing my job, pal', 'paid by the tow, pal',
@@ -129,6 +131,9 @@ function thoughtOf(b){
   if (b.carVoid && !b.towed && (b.life === 'muddled' || b.life === 'hunting'))
     return pickLine(b, ['it\'s not anywhere. it\'s not ANYWHERE.',
                         'cars do not just vanish']);
+  if (b.kind === 'trolleyboy' && b.grumbleT > 0) return 'who keeps DOING this';
+  if (b.kind === 'cleaner') return cleanerThought(b);
+  if (b.kind === 'manager' && b.grumbleT > 0) return b.night ? 'foxes. it\'s always foxes.' : 'yes sir. right away sir.';
   if (b.kind === 'gull'){
     if (b.leavingTo) return b.leavingTo === 'tay' ? 'fishing it is' : 'right. the tip.';
     if ((b.fat || 0) >= 1) return pickLine(b, ['can\'t... quite... take off', 'i live here now']);
@@ -139,8 +144,7 @@ function thoughtOf(b){
     if ((b.fed || 0) > 6) return 'i have eaten so much rubber';
     return pickLine(b, ['chips', 'is that a chip', 'tyre. delicious.']);
   }
-  if (b.kind === 'fox') return pickLine(b, ['bins', 'the bins are this way',
-                                            'nobody here but me']);
+  if (b.kind === 'fox') return foxThought(b);
   if (b.kind === 'manager' && (b.ticketBay || (b.ticketed && simClockNow() - b.ticketed < 4)))
     return b.night ? pickLine(b, ['fine. a ticket.', 'whose is this even', 'not paid enough for parking'])
                    : pickLine(b, ['you can\'t just LEAVE that there', 'third time. THIRD.',
