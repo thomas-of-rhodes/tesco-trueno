@@ -10,7 +10,13 @@ const path = require('path');
 const vm = require('vm');
 const os = require('os');
 const root = path.join(__dirname, '..');
-const A = process.argv[2] || '', B = process.argv[3] || '';
+/* "@path" anywhere in a variant is replaced by that file's contents - for a
+   brain file, e.g. "@brains/granny.brain.js BRAINS.granny.policy = 'net';" */
+const expand = function(code){
+  return code.replace(/@(\S+)/g, function(m, f){ return fs.readFileSync(path.join(root, f), 'utf8') + '\n'; });
+};
+const A = expand(process.argv[2] || ''), B = expand(process.argv[3] || '');
+const seed0 = +(process.env.SEED0 || 1000);
 const n = +(process.argv[4] || 11), secs = +(process.argv[5] || 600);
 const par = +(process.argv[6] || Math.max(1, os.cpus().length - 2));
 /* LAB_ROWS, from the runner itself, so the rows are the lab's own. */
@@ -26,7 +32,7 @@ function run(seed, code){
   });
 }
 const specs = [];
-for (let i = 0; i < n; i++){ specs.push([1000 + i, A]); specs.push([1000 + i, B]); }
+for (let i = 0; i < n; i++){ specs.push([seed0 + i, A]); specs.push([seed0 + i, B]); }
 const out = new Array(specs.length);
 let next = 0, fin = 0;
 const t0 = Date.now();

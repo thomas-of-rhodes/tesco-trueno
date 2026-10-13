@@ -41,9 +41,11 @@
 
 const BRAINS = {
   granny: {
-    policy:'hand',
+    policy:'net',                          // the shipped brain (v1.0, 2026-10-13); 'hand' for the old way
     kind:{},                               // the hive: a net.js network - empty until one is trained
-    learnRate:0.003, dialRate:0.05,        // learning as the game goes (net policy only); 0 = frozen
+    learnRate:0, dialRate:0.05,            // as the game goes: the shared hive stays as shipped,
+                                           // each granny's own dials keep learning (0 = frozen)
+    v:1,                                   // which shipped brain this town has been switched to
     base:null,                             // her usual day, the yardstick a day is measured against
     days:{ n:0, sum:0, lost:0, chats:0, wet:0 },  // running tallies of scored days, for the lab
     made:{},                               // decision -> how often each option was taken
@@ -479,9 +481,15 @@ function grannyLearn(kb, pb, diary){
   }
 }
 
+/* A town saved before a brain shipped is switched to it once, on its first
+   decision: the shipped hive, frozen; her own dials learning. */
+const GRANNY_BRAIN_V = 1;
 function decide(name, b, ctx){
   const dp = DECISIONS[name];
   const kb = BRAINS[dp.kind];
+  if (dp.kind === 'granny' && (kb.v || 0) < GRANNY_BRAIN_V){
+    kb.v = GRANNY_BRAIN_V; kb.policy = 'net'; kb.learnRate = 0; kb.dialRate = 0.05; kb.kind = {};
+  }
   const s = dp.senses(b, ctx);
   const pol = POLICIES[kb.policy] || POLICIES.hand;
   const pb = b.res ? (b.res.brain || (b.res.brain = { n:0, mean:0, bias:{} })) : null;

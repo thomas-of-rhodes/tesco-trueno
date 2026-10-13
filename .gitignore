@@ -6,3 +6,4 @@
 .claude/
 tools/.train-state.json
 tools/train-log.txt
+tools/final.brain.js

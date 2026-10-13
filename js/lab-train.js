@@ -3,7 +3,9 @@
    tools/train.js (in the terminal, 2026-10-13), so both run the identical
    algorithm. Needs net.js. */
 
-const HAND_CODE = 'BRAINS.granny.tap = [];';
+/* The hand-written granny, asked for by name: since v1.0 the game's default is
+   the brain, so an arm that says nothing would be the brain. */
+const HAND_CODE = "BRAINS.granny.policy = 'hand'; BRAINS.granny.tap = [];";
 function netCode(hive){
   return "BRAINS.granny.policy = 'net'; BRAINS.granny.kind = " + JSON.stringify(hive) +
          "; BRAINS.granny.learnRate = 0; BRAINS.granny.dialRate = 0; BRAINS.granny.tap = [];";
